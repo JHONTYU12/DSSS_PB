@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel, Field
 from ..rbac.deps import require_roles_csrf
-from ..db.session import SessionLocal
+from ..db.session import SessionSecretaria, SessionIdentidad  # BD Secretaría + BD Identidad
 from ..db import models
 from ..audit.logger import log_event
 
@@ -16,16 +16,17 @@ class CaseCreate(BaseModel):
 @router.post("/casos")
 def create_case(payload: CaseCreate, request: Request, ctx=Depends(require_roles_csrf("secretario"))):
     s, u = ctx
-    db = SessionLocal()
+    db_identidad = SessionIdentidad()  # Para buscar juez
+    db_secretaria = SessionSecretaria()  # Para crear caso
     try:
         assigned_id = None
         if payload.assign_to_judge_username:
-            j = db.query(models.User).filter(models.User.username == payload.assign_to_judge_username, models.User.role == "juez").first()
+            j = db_identidad.query(models.User).filter(models.User.username == payload.assign_to_judge_username, models.User.role == "juez").first()
             if not j:
                 raise HTTPException(status_code=400, detail="Judge not found")
             assigned_id = j.id
 
-        if db.query(models.Case).filter(models.Case.case_number == payload.case_number).first():
+        if db_secretaria.query(models.Case).filter(models.Case.case_number == payload.case_number).first():
             raise HTTPException(status_code=409, detail="Case number already exists")
 
         c = models.Case(
@@ -36,20 +37,21 @@ def create_case(payload: CaseCreate, request: Request, ctx=Depends(require_roles
             assigned_judge=assigned_id,
             status="CREATED"
         )
-        db.add(c)
-        db.commit()
-        db.refresh(c)
+        db_secretaria.add(c)
+        db_secretaria.commit()
+        db_secretaria.refresh(c)
 
         log_event(actor=u.username, role=u.role, action="CASE_CREATE", target=f"case:{c.id}", ip=request.client.host if request.client else None,
                   success=True, details=f"case_number={payload.case_number}")
         return {"case_id": c.id, "case_number": c.case_number, "status": c.status, "assigned_judge": payload.assign_to_judge_username}
     finally:
-        db.close()
+        db_identidad.close()
+        db_secretaria.close()
 
 @router.get("/casos")
 def list_cases(ctx=Depends(require_roles_csrf("secretario"))):
     s, u = ctx
-    db = SessionLocal()
+    db = SessionSecretaria()  # BD Secretaría
     try:
         items = db.query(models.Case).order_by(models.Case.id.desc()).limit(50).all()
         return [{"id": c.id, "case_number": c.case_number, "title": c.title, "status": c.status} for c in items]

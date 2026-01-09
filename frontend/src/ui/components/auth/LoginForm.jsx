@@ -2,10 +2,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { Card } from "../common/Card";
 import { Input } from "../common/Input";
 import { Button } from "../common/Button";
-import { IconShield, IconUser, IconLock, IconEye, IconEyeOff, IconKey } from "../icons/Icons";
-import { getDevOtp } from "../../api";
+import { IconShield, IconUser, IconLock, IconEye, IconEyeOff } from "../icons/Icons";
 
-export function LoginForm({ onLogin, loading, error }) {
+export function LoginForm({ onLogin, loading, error, onGoToPublic }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -80,6 +79,17 @@ export function LoginForm({ onLogin, loading, error }) {
           <Button type="submit" loading={loading} style={{ width: "100%", marginTop: 8 }}>
             Continuar
           </Button>
+
+          {onGoToPublic && (
+            <Button 
+              type="button" 
+              variant="secondary" 
+              onClick={onGoToPublic} 
+              style={{ width: "100%", marginTop: 8 }}
+            >
+              ← Consulta Pública de Casos
+            </Button>
+          )}
         </form>
 
         <div style={{ marginTop: 24, textAlign: "center", fontSize: "0.75rem", color: "var(--text-muted)" }}>
@@ -92,40 +102,11 @@ export function LoginForm({ onLogin, loading, error }) {
 
 export function OtpForm({ onVerify, loading, error, onBack, loginToken }) {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [devOtp, setDevOtp] = useState(null);
-  const [devLoading, setDevLoading] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(0);
   const inputRefs = useRef([]);
 
   useEffect(() => {
     inputRefs.current[0]?.focus();
   }, []);
-
-  // Countdown timer for OTP validity
-  useEffect(() => {
-    if (timeRemaining > 0) {
-      const timer = setTimeout(() => setTimeRemaining(timeRemaining - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (timeRemaining === 0 && devOtp) {
-      setDevOtp(null);
-    }
-  }, [timeRemaining, devOtp]);
-
-  const handleGetDevOtp = async () => {
-    setDevLoading(true);
-    try {
-      const result = await getDevOtp(loginToken);
-      setDevOtp(result.otp);
-      setTimeRemaining(result.valid_for_seconds);
-      // Auto-fill the OTP
-      const digits = result.otp.split("");
-      setOtp(digits);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setDevLoading(false);
-    }
-  };
 
   const handleChange = (index, value) => {
     if (!/^\d*$/.test(value)) return;
@@ -189,70 +170,6 @@ export function OtpForm({ onVerify, loading, error, onBack, loginToken }) {
                 maxLength={1}
               />
             ))}
-          </div>
-
-          {/* Dev/Demo OTP Helper */}
-          <div style={{ 
-            padding: "16px", 
-            background: "rgba(251, 191, 36, 0.08)", 
-            border: "1px solid rgba(251, 191, 36, 0.2)",
-            borderRadius: "var(--radius-md)",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <IconKey size={16} style={{ color: "var(--accent)" }} />
-              <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                Modo Demo
-              </span>
-            </div>
-            
-            {devOtp ? (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ 
-                  fontSize: "1.75rem", 
-                  fontWeight: 700, 
-                  fontFamily: "monospace", 
-                  letterSpacing: "0.3em",
-                  color: "var(--accent)",
-                  marginBottom: 4
-                }}>
-                  {devOtp}
-                </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                  Válido por {timeRemaining}s
-                  <div style={{ 
-                    width: "100%", 
-                    height: 3, 
-                    background: "var(--bg-secondary)", 
-                    borderRadius: 2, 
-                    marginTop: 6,
-                    overflow: "hidden"
-                  }}>
-                    <div style={{ 
-                      width: `${(timeRemaining / 30) * 100}%`, 
-                      height: "100%", 
-                      background: timeRemaining > 10 ? "var(--accent)" : "var(--error)",
-                      transition: "width 1s linear"
-                    }} />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: 12 }}>
-                  ¿No tienes una app autenticadora? Obtén el código directamente:
-                </p>
-                <Button 
-                  type="button" 
-                  variant="secondary" 
-                  onClick={handleGetDevOtp} 
-                  loading={devLoading}
-                  style={{ width: "100%" }}
-                >
-                  <IconKey size={16} />
-                  Obtener Código OTP
-                </Button>
-              </>
-            )}
           </div>
 
           {error && (

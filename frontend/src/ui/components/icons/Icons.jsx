@@ -206,3 +206,28 @@ export const IconLoader = ({ size = 20, ...props }) => (
     <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
   </svg>
 );
+
+export const IconScale = ({ size = 20, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M8 3L12 7L16 3"/>
+    <path d="M12 7V21"/>
+    <path d="M17 8L21 12L17 16"/>
+    <path d="M7 8L3 12L7 16"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+  </svg>
+);
+
+export const IconShieldCheck = ({ size = 20, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    <polyline points="9 12 11 14 15 10"/>
+  </svg>
+);
+
+// Alias para compatibilidad con nombres comunes
+export const SearchIcon = IconSearch;
+export const FileTextIcon = IconFile;
+export const ShieldCheckIcon = IconShieldCheck;
+export const CheckCircleIcon = IconCheckCircle;
+export const XCircleIcon = IconXCircle;
+export const ScaleIcon = IconScale;

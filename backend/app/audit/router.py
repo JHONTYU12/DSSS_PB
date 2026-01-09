@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from ..rbac.deps import require_roles_csrf
-from ..db.session import SessionLocal
+from ..db.session import SessionAuditoria  # BD Logs y Auditoría
 from ..db import models
 
 router = APIRouter(prefix="/auditoria", tags=["auditoria"])
@@ -28,7 +28,7 @@ def get_logs(ctx=Depends(require_roles_csrf("auditor"))):
     Esto permite auditar el sistema sin comprometer el anonimato juez-caso.
     """
     s, u = ctx
-    db = SessionLocal()
+    db = SessionAuditoria()
     try:
         items = db.query(models.AuditEvent).order_by(models.AuditEvent.id.desc()).limit(200).all()
         return [{
@@ -51,7 +51,7 @@ def get_stats(ctx=Depends(require_roles_csrf("auditor"))):
     Estadísticas agregadas de auditoría (no revelan información individual).
     """
     s, u = ctx
-    db = SessionLocal()
+    db = SessionAuditoria()
     try:
         from sqlalchemy import func
         
@@ -80,5 +80,4 @@ def get_stats(ctx=Depends(require_roles_csrf("auditor"))):
             "total_events": db.query(func.count(models.AuditEvent.id)).scalar()
         }
     finally:
-        db.close()
         db.close()

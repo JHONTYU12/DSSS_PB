@@ -1,6 +1,6 @@
 import hmac
 import hashlib
-from ..db.session import SessionLocal
+from ..db.session import SessionAuditoria  # BD Logs y Auditoría
 from ..db import models
 from ..core.settings import settings
 
@@ -25,7 +25,7 @@ def log_event(actor: str | None, role: str | None, action: str, target: str | No
     - Los datos reales (actor, target, details) se guardan cifrados o redactados
       dependiendo del nivel de seguridad requerido.
     """
-    db = SessionLocal()
+    db = SessionAuditoria()
     try:
         # Generar pseudónimos para correlación anónima
         actor_pseudo = pseudonymize(actor, "actor")

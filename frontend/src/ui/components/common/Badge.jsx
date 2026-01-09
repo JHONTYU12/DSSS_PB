@@ -7,7 +7,21 @@ const statusVariants = {
   warning: "status-warning",
   pending: "status-pending",
   neutral: "status-neutral",
+  secondary: "status-neutral",
 };
+
+/**
+ * Badge component - versatile badge with variant support
+ * @param {string} variant - Badge variant (success, error, warning, pending, neutral, secondary)
+ * @param {ReactNode} children - Badge content
+ */
+export function Badge({ variant = "neutral", children, className = "" }) {
+  return (
+    <span className={`status-badge ${statusVariants[variant] || statusVariants.neutral} ${className}`}>
+      {children}
+    </span>
+  );
+}
 
 export function StatusBadge({ status, label }) {
   return <span className={`status-badge ${statusVariants[status] || statusVariants.neutral}`}>{label}</span>;

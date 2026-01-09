@@ -13,6 +13,7 @@ import {
   CustodioDashboard, 
   AuditDashboard 
 } from "./components/dashboard";
+import { PublicCaseSearch } from "./components/public";
 
 function AppContent() {
   const toast = useToast();
@@ -30,13 +31,24 @@ function AppContent() {
       setError("");
     } catch {
       setUser(null);
-      setStage("login");
+      // Por defecto mostrar vista pública en lugar de login
+      setStage("public");
     }
   }
 
   useEffect(() => {
     refreshWhoami();
   }, []);
+
+  const handleGoToLogin = () => {
+    setStage("login");
+    setError("");
+  };
+
+  const handleGoToPublic = () => {
+    setStage("public");
+    setError("");
+  };
 
   const handleLogin = async (username, password) => {
     setError("");
@@ -74,7 +86,7 @@ function AppContent() {
       toast.success("Sesión cerrada");
     } catch {}
     setUser(null);
-    setStage("login");
+    setStage("public");
     setLoginToken("");
   };
 
@@ -93,9 +105,14 @@ function AppContent() {
     );
   }
 
+  // Public case search (default for unauthenticated users)
+  if (stage === "public") {
+    return <PublicCaseSearch onGoToLogin={handleGoToLogin} />;
+  }
+
   // Login stage
   if (stage === "login") {
-    return <LoginForm onLogin={handleLogin} loading={loading} error={error} />;
+    return <LoginForm onLogin={handleLogin} loading={loading} error={error} onGoToPublic={handleGoToPublic} />;
   }
 
   // OTP stage

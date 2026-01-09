@@ -1,71 +1,206 @@
-from sqlalchemy import String, DateTime, Boolean, ForeignKey, Text, Integer
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime, timezone
-from .base import Base
+"""
+Modelos de datos del sistema SFAS según arquitectura C4.
 
-class User(Base):
+Los modelos están organizados por la base de datos a la que pertenecen:
+
+1. BD Identidades y Acceso (BaseIdentidad):
+   - User: usuarios del sistema
+   - Session: sesiones activas
+
+2. BD Secretaría (BaseSecretaria):
+   - Case: casos judiciales y expedientes
+
+3. BD Jueces (BaseJueces):
+   - Resolution: resoluciones judiciales
+   - OpeningRequest: solicitudes de apertura M-de-N
+   - OpeningApproval: aprobaciones de custodios
+
+4. BD Auditoría (BaseAuditoria):
+   - AuditEvent: eventos de seguridad y trazabilidad
+"""
+
+from sqlalchemy import String, DateTime, Boolean, Text, Integer
+from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime, timezone
+from .base import BaseIdentidad, BaseSecretaria, BaseJueces, BaseAuditoria
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BD IDENTIDADES Y ACCESO
+# Almacena: credenciales, roles, estado de cuentas, sesiones activas
+# ══════════════════════════════════════════════════════════════════════════════
+
+class User(BaseIdentidad):
+    """
+    Usuarios del sistema con autenticación MFA.
+    
+    Roles disponibles:
+    - admin: Administrador del sistema
+    - juez: Juez que firma resoluciones
+    - secretario: Registra casos y expedientes
+    - custodio: Aprueba aperturas M-de-N
+    - auditor: Consulta logs de auditoría
+    """
     __tablename__ = "users"
+    
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(20))
+    role: Mapped[str] = mapped_column(String(20), index=True)
     totp_secret: Mapped[str] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc)
+    )
 
-class Session(Base):
+
+class Session(BaseIdentidad):
+    """
+    Sesiones activas de usuarios autenticados.
+    
+    Incluye token CSRF para protección contra ataques CSRF.
+    Las sesiones pueden ser revocadas manualmente o expiran automáticamente.
+    """
     __tablename__ = "sessions"
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # session id
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
     csrf_token: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    user = relationship("User")
 
-class Case(Base):
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BD SECRETARÍA
+# Almacena: casos judiciales, expedientes administrativos
+# ══════════════════════════════════════════════════════════════════════════════
+
+class Case(BaseSecretaria):
+    """
+    Casos judiciales registrados por secretarios.
+    
+    Estados del caso:
+    - CREATED: Caso creado, pendiente de asignación
+    - ASSIGNED: Caso asignado a un juez
+    - DRAFT_RESOLUTION: Juez está redactando resolución
+    - RESOLUTION_SIGNED: Resolución firmada
+    - CLOSED: Caso cerrado
+    """
     __tablename__ = "cases"
+    
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     case_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(200))
     parties: Mapped[str] = mapped_column(Text)
-    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
-    assigned_judge: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
-    status: Mapped[str] = mapped_column(String(30), default="CREATED")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # Referencias a usuarios (por ID, sin FK ya que está en otra BD)
+    created_by: Mapped[str] = mapped_column(String(36), index=True)
+    assigned_judge: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(30), default="CREATED", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc)
+    )
 
-class Resolution(Base):
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BD JUECES
+# Almacena: resoluciones, estados de firma, aperturas M-de-N
+# ══════════════════════════════════════════════════════════════════════════════
+
+class Resolution(BaseJueces):
+    """
+    Resoluciones judiciales creadas y firmadas por jueces.
+    
+    La firma es anónima (firma grupal) para proteger la identidad del juez.
+    El hash SHA256 permite verificación pública de autenticidad.
+    """
     __tablename__ = "resolutions"
+    
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    case_id: Mapped[int] = mapped_column(Integer, ForeignKey("cases.id"), index=True)
+    # Referencia al caso (por ID, sin FK ya que está en BD Secretaría)
+    case_id: Mapped[int] = mapped_column(Integer, index=True)
     content: Mapped[str] = mapped_column(Text)
-    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
-    status: Mapped[str] = mapped_column(String(30), default="DRAFT")
+    # Referencia al juez que creó (por ID, sin FK ya que está en BD Identidad)
+    created_by: Mapped[str] = mapped_column(String(36), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="DRAFT", index=True)
+    # Criptografía
     doc_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-class OpeningRequest(Base):
+
+class OpeningRequest(BaseJueces):
+    """
+    Solicitudes de apertura de documentos sellados (esquema M-de-N).
+    
+    Requiere M aprobaciones de N custodios para completarse.
+    Incluye mecanismo de visualización única con token temporal.
+    """
     __tablename__ = "opening_requests"
+    
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    case_id: Mapped[int] = mapped_column(Integer, ForeignKey("cases.id"), index=True)
+    # Referencia al caso (por ID, sin FK)
+    case_id: Mapped[int] = mapped_column(Integer, index=True)
     reason: Mapped[str] = mapped_column(Text)
     m_required: Mapped[int] = mapped_column(Integer, default=2)
-    status: Mapped[str] = mapped_column(String(30), default="PENDING")
-    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    status: Mapped[str] = mapped_column(String(30), default="PENDING", index=True)
+    # Referencia al creador (por ID, sin FK)
+    created_by: Mapped[str] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc)
+    )
+    # Campos para visualización única segura
+    view_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    view_token_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    viewed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
-class OpeningApproval(Base):
+
+class OpeningApproval(BaseJueces):
+    """
+    Aprobaciones de custodios para solicitudes de apertura.
+    
+    Cada custodio puede aprobar o rechazar una solicitud.
+    Se requieren M aprobaciones para completar la apertura.
+    """
     __tablename__ = "opening_approvals"
+    
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    request_id: Mapped[int] = mapped_column(Integer, ForeignKey("opening_requests.id"), index=True)
-    custodian_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
+    request_id: Mapped[int] = mapped_column(Integer, index=True)
+    # Referencia al custodio (por ID, sin FK)
+    custodian_id: Mapped[str] = mapped_column(String(36), index=True)
     decision: Mapped[str] = mapped_column(String(10), default="APPROVE")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc)
+    )
 
-class AuditEvent(Base):
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BD LOGS Y AUDITORÍA
+# Almacena: eventos de seguridad, acciones críticas, trazabilidad
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AuditEvent(BaseAuditoria):
+    """
+    Eventos de auditoría para trazabilidad del sistema.
+    
+    Implementa pseudonimización con HMAC para permitir correlación
+    de eventos sin revelar identidades reales a auditores.
+    
+    Los datos reales (actor, target) solo son accesibles en
+    investigaciones forenses autorizadas.
+    """
     __tablename__ = "audit_events"
+    
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc), 
+        index=True
+    )
     # Datos reales (acceso restringido - solo investigación forense)
     actor: Mapped[str | None] = mapped_column(String(50), nullable=True)
     target: Mapped[str | None] = mapped_column(String(200), nullable=True)

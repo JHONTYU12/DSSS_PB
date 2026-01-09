@@ -4,7 +4,7 @@ from passlib.hash import bcrypt
 import pyotp
 import secrets
 from datetime import datetime, timezone, timedelta
-from ..db.session import SessionLocal
+from ..db.session import SessionIdentidad  # BD Identidades y Acceso
 from ..db import models
 from ..core.settings import settings
 from ..audit.logger import log_event
@@ -23,7 +23,7 @@ class VerifyOtpReq(BaseModel):
 
 @router.post("/login")
 def login(req: LoginReq, request: Request):
-    db = SessionLocal()
+    db = SessionIdentidad()
     try:
         u = db.query(models.User).filter(models.User.username == req.username).first()
         if not u or not u.is_active or not bcrypt.verify(req.password, u.password_hash):
@@ -53,16 +53,19 @@ def verify_otp(req: VerifyOtpReq, response: Response, request: Request):
         LOGIN_TOKENS.pop(req.login_token, None)
         raise HTTPException(status_code=401, detail="OTP challenge expired")
 
-    db = SessionLocal()
+    db = SessionIdentidad()
     try:
         u = db.query(models.User).filter(models.User.id == entry["user_id"]).first()
         if not u or not u.is_active:
             raise HTTPException(status_code=401, detail="Invalid user")
 
         totp = pyotp.TOTP(u.totp_secret)
-        if not totp.verify(req.otp, valid_window=1):
+        current_otp = totp.now()
+        print(f"[DEBUG] User: {u.username}, Secret: {u.totp_secret}, Current OTP: {current_otp}, Received OTP: {req.otp}")
+        
+        if not totp.verify(req.otp, valid_window=2):  # Aumentamos la ventana a 2 (±1 minuto)
             log_event(actor=u.username, role=u.role, action="AUTH_OTP_VERIFY", ip=request.client.host if request.client else None,
-                      success=False, details="invalid otp")
+                      success=False, details=f"invalid otp - expected: {current_otp}, received: {req.otp}")
             raise HTTPException(status_code=401, detail="Invalid OTP")
 
         # Create session
@@ -107,7 +110,7 @@ def verify_otp(req: VerifyOtpReq, response: Response, request: Request):
 @router.post("/logout")
 def logout(response: Response, request: Request, sfas_session: str | None = Cookie(default=None, alias="sfas_session")):
     if sfas_session:
-        db = SessionLocal()
+        db = SessionIdentidad()
         try:
             s = db.query(models.Session).filter(models.Session.id == sfas_session).first()
             if s:
@@ -121,44 +124,3 @@ def logout(response: Response, request: Request, sfas_session: str | None = Cook
     log_event(actor=None, role=None, action="AUTH_LOGOUT", ip=request.client.host if request.client else None,
               success=True, details="logout")
     return {"message": "logged out"}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ENDPOINT DE DESARROLLO/DEMO: Obtener código TOTP actual
-# En producción, esto DEBE ser eliminado o protegido
-# ══════════════════════════════════════════════════════════════════════════════
-class GetOtpReq(BaseModel):
-    login_token: str
-
-@router.post("/dev/get-otp")
-def dev_get_current_otp(req: GetOtpReq):
-    """
-    [SOLO DESARROLLO/DEMO] Devuelve el código TOTP actual para el usuario.
-    Esto permite probar sin necesidad de una app autenticadora.
-    ⚠️ ELIMINAR EN PRODUCCIÓN
-    """
-    entry = LOGIN_TOKENS.get(req.login_token)
-    if not entry:
-        raise HTTPException(status_code=401, detail="Login token inválido o expirado")
-    if entry["expires_at"] < datetime.now(timezone.utc):
-        LOGIN_TOKENS.pop(req.login_token, None)
-        raise HTTPException(status_code=401, detail="Login token expirado")
-
-    db = SessionLocal()
-    try:
-        u = db.query(models.User).filter(models.User.id == entry["user_id"]).first()
-        if not u or not u.is_active:
-            raise HTTPException(status_code=401, detail="Usuario inválido")
-
-        totp = pyotp.TOTP(u.totp_secret)
-        current_code = totp.now()
-        # Calcular segundos restantes de validez
-        time_remaining = 30 - (datetime.now(timezone.utc).timestamp() % 30)
-        
-        return {
-            "otp": current_code,
-            "valid_for_seconds": int(time_remaining),
-            "warning": "⚠️ Este endpoint es solo para desarrollo/demo"
-        }
-    finally:
-        db.close()
