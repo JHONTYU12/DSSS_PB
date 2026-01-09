@@ -1,35 +1,113 @@
-version: "3.9"
-
 services:
-  postgres:
+  # ══════════════════════════════════════════════════════════════════════════════
+  # BASE DE DATOS: Identidades y Acceso (según diagrama C4)
+  # Almacena: usuarios, sesiones, credenciales, roles, estado de cuentas
+  # ══════════════════════════════════════════════════════════════════════════════
+  postgres_identidad:
     image: postgres:16-alpine
-    container_name: sfas_postgres
+    container_name: sfas_db_identidad
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-sfas}
+      POSTGRES_DB: sfas_identidad
       POSTGRES_USER: ${POSTGRES_USER:-sfas}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sfas_password_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_IDENTIDAD:-sfas_identidad_pass_2026}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sfas} -d ${POSTGRES_DB:-sfas}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sfas} -d sfas_identidad"]
       interval: 5s
       timeout: 5s
       retries: 20
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_identidad_data:/var/lib/postgresql/data
     networks: [sfas_net]
 
+  # ══════════════════════════════════════════════════════════════════════════════
+  # BASE DE DATOS: Secretaría (según diagrama C4)
+  # Almacena: casos, expedientes administrativos
+  # ══════════════════════════════════════════════════════════════════════════════
+  postgres_secretaria:
+    image: postgres:16-alpine
+    container_name: sfas_db_secretaria
+    environment:
+      POSTGRES_DB: sfas_secretaria
+      POSTGRES_USER: ${POSTGRES_USER:-sfas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_SECRETARIA:-sfas_secretaria_pass_2026}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sfas} -d sfas_secretaria"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_secretaria_data:/var/lib/postgresql/data
+    networks: [sfas_net]
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # BASE DE DATOS: Jueces (según diagrama C4)
+  # Almacena: resoluciones, estados de firma, aperturas M-de-N
+  # ══════════════════════════════════════════════════════════════════════════════
+  postgres_jueces:
+    image: postgres:16-alpine
+    container_name: sfas_db_jueces
+    environment:
+      POSTGRES_DB: sfas_jueces
+      POSTGRES_USER: ${POSTGRES_USER:-sfas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_JUECES:-sfas_jueces_pass_2026}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sfas} -d sfas_jueces"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_jueces_data:/var/lib/postgresql/data
+    networks: [sfas_net]
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # BASE DE DATOS: Logs y Auditoría (según diagrama C4)
+  # Almacena: eventos de seguridad, acciones críticas, trazabilidad
+  # ══════════════════════════════════════════════════════════════════════════════
+  postgres_auditoria:
+    image: postgres:16-alpine
+    container_name: sfas_db_auditoria
+    environment:
+      POSTGRES_DB: sfas_auditoria
+      POSTGRES_USER: ${POSTGRES_USER:-sfas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_AUDITORIA:-sfas_auditoria_pass_2026}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sfas} -d sfas_auditoria"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_auditoria_data:/var/lib/postgresql/data
+    networks: [sfas_net]
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # BACKEND API (FastAPI)
+  # ══════════════════════════════════════════════════════════════════════════════
   backend:
     build: ./backend
     container_name: sfas_backend
     environment:
       APP_MASTER_KEY: ${APP_MASTER_KEY:-CHANGE_ME}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sfas}:${POSTGRES_PASSWORD:-sfas_password_change_me}@postgres:5432/${POSTGRES_DB:-sfas}
+      # URLs de las 4 bases de datos separadas según arquitectura C4
+      DATABASE_URL_IDENTIDAD: postgresql+psycopg://${POSTGRES_USER:-sfas}:${POSTGRES_PASSWORD_IDENTIDAD:-sfas_identidad_pass_2026}@postgres_identidad:5432/sfas_identidad
+      DATABASE_URL_SECRETARIA: postgresql+psycopg://${POSTGRES_USER:-sfas}:${POSTGRES_PASSWORD_SECRETARIA:-sfas_secretaria_pass_2026}@postgres_secretaria:5432/sfas_secretaria
+      DATABASE_URL_JUECES: postgresql+psycopg://${POSTGRES_USER:-sfas}:${POSTGRES_PASSWORD_JUECES:-sfas_jueces_pass_2026}@postgres_jueces:5432/sfas_jueces
+      DATABASE_URL_AUDITORIA: postgresql+psycopg://${POSTGRES_USER:-sfas}:${POSTGRES_PASSWORD_AUDITORIA:-sfas_auditoria_pass_2026}@postgres_auditoria:5432/sfas_auditoria
       COOKIE_SECURE: "false"  # en prod: true (HTTPS)
       COOKIE_DOMAIN: ""       # opcional
     depends_on:
-      postgres:
+      postgres_identidad:
+        condition: service_healthy
+      postgres_secretaria:
+        condition: service_healthy
+      postgres_jueces:
+        condition: service_healthy
+      postgres_auditoria:
         condition: service_healthy
     networks: [sfas_net]
 
+  # ══════════════════════════════════════════════════════════════════════════════
+  # FRONTEND (Vite/React)
+  # ══════════════════════════════════════════════════════════════════════════════
   frontend:
     build: ./frontend
     container_name: sfas_frontend
@@ -37,6 +115,9 @@ services:
       VITE_API_BASE: "/api"
     networks: [sfas_net]
 
+  # ══════════════════════════════════════════════════════════════════════════════
+  # NGINX (Reverse Proxy + Security Headers)
+  # ══════════════════════════════════════════════════════════════════════════════
   nginx:
     image: nginx:1.27-alpine
     container_name: sfas_nginx
@@ -51,4 +132,7 @@ networks:
   sfas_net:
 
 volumes:
-  postgres_data:
+  postgres_identidad_data:
+  postgres_secretaria_data:
+  postgres_jueces_data:
+  postgres_auditoria_data:
