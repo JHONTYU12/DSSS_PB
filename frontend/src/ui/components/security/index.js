@@ -1,1 +1,1 @@
-export { SecurityRecorder } from './SecurityRecorder';
+export { SecurityRecorder } from "./SecurityRecorder";
