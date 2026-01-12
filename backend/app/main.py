@@ -9,6 +9,7 @@ from .judge.router import router as juez_router
 from .opening.router import router as opening_router
 from .audit.router import router as audit_router
 from .public.router import router as public_router
+from .recordings.router import router as recordings_router
 from .rbac.deps import get_session_and_user
 
 app = FastAPI(title="LexSecure SFAS API", version="2.0")
@@ -41,6 +42,7 @@ app.include_router(juez_router)
 app.include_router(opening_router)
 app.include_router(audit_router)
 app.include_router(public_router)  # Public endpoints - no auth required
+app.include_router(recordings_router)  # Security recordings
 
 # Swagger: explain cookie auth & CSRF
 def custom_openapi():

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardHeader, Table, Button, FilterChips, useToast, StatCard, PseudoBadge, SuccessBadge, Modal } from "../common";
-import { IconActivity, IconRefresh, IconFilter, IconShield, IconCheckCircle, IconXCircle, IconUnlock, IconEye, IconAlertTriangle, IconClock } from "../icons/Icons";
+import { IconActivity, IconRefresh, IconFilter, IconShield, IconCheckCircle, IconXCircle, IconUnlock, IconEye, IconAlertTriangle, IconClock, IconVideo } from "../icons/Icons";
 import { apiFetch } from "../../api";
+import { SecurityRecorder } from "../security/SecurityRecorder";
 
 const ACTION_FILTERS = [
   { value: "all", label: "Todos" },
@@ -25,6 +26,7 @@ function SecureViewModal({ opening, onClose, onViewed }) {
   const [secondsLeft, setSecondsLeft] = useState(120);
   const [viewData, setViewData] = useState(null);
   const [error, setError] = useState(null);
+  const [isRecordingActive, setIsRecordingActive] = useState(false);
   const timerRef = useRef(null);
 
   const requestToken = async () => {
@@ -43,6 +45,24 @@ function SecureViewModal({ opening, onClose, onViewed }) {
     }
   };
 
+  const handleRecordingStart = () => {
+    console.log("Grabación de seguridad iniciada");
+  };
+
+  const handleRecordingEnd = () => {
+    console.log("Grabación de seguridad finalizada");
+  };
+
+  const handleRecordingUploaded = (response) => {
+    toast.success("Grabación de seguridad guardada exitosamente");
+  };
+
+  // Manejar cierre del modal - detener grabación
+  const handleClose = () => {
+    setIsRecordingActive(false);
+    onClose();
+  };
+
   const viewSecureData = async () => {
     if (!token) return;
     setStage("loading");
@@ -53,6 +73,8 @@ function SecureViewModal({ opening, onClose, onViewed }) {
       });
       setViewData(data);
       setStage("viewing");
+      // Iniciar grabación al entrar a la vista de información sensible
+      setIsRecordingActive(true);
       if (timerRef.current) clearInterval(timerRef.current);
       onViewed?.();
     } catch (e) {
@@ -160,12 +182,33 @@ function SecureViewModal({ opening, onClose, onViewed }) {
             <h3 style={{ margin: "0 0 8px", fontSize: "2rem", fontFamily: "monospace", color: isUrgent ? "#ef4444" : "var(--text-primary)" }}>
               {formatTime(secondsLeft)}
             </h3>
-            <p style={{ color: "var(--text-secondary)", marginBottom: 24 }}>
+            <p style={{ color: "var(--text-secondary)", marginBottom: 16 }}>
               Token de vista única generado. Haz clic para ver la información.
             </p>
+            
+            {/* Advertencia de grabación */}
+            <div style={{ 
+              background: "rgba(239, 68, 68, 0.1)", 
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              borderRadius: "var(--radius-md)",
+              padding: "12px 16px",
+              marginBottom: 20,
+              display: "flex",
+              alignItems: "center",
+              gap: 12
+            }}>
+              <IconVideo size={24} style={{ color: "#ef4444", flexShrink: 0 }} />
+              <div style={{ textAlign: "left", fontSize: "0.875rem" }}>
+                <strong style={{ color: "#ef4444" }}>⚠️ AVISO DE GRABACIÓN:</strong>
+                <p style={{ margin: "4px 0 0", color: "var(--text-secondary)" }}>
+                  Al ver la información, serás <strong>grabado (video y audio)</strong> durante todo el tiempo que tengas abierta esta pantalla. La grabación se guardará como evidencia forense.
+                </p>
+              </div>
+            </div>
+            
             <Button onClick={viewSecureData} style={{ width: "100%" }}>
               <IconEye size={18} />
-              Ver Información Sensible Ahora
+              Acepto ser grabado - Ver Información
             </Button>
           </div>
         );
@@ -173,6 +216,42 @@ function SecureViewModal({ opening, onClose, onViewed }) {
       case "viewing":
         return (
           <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+            {/* Indicador de grabación activa */}
+            <div style={{ 
+              background: "rgba(239, 68, 68, 0.15)", 
+              border: "1px solid rgba(239, 68, 68, 0.4)",
+              borderRadius: "var(--radius-md)",
+              padding: "10px 16px",
+              marginBottom: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ 
+                  width: 12, height: 12, borderRadius: "50%", 
+                  background: "#ef4444",
+                  animation: "pulse 1s infinite"
+                }}></span>
+                <IconVideo size={18} style={{ color: "#ef4444" }} />
+                <span style={{ fontWeight: 600, color: "#ef4444", fontSize: "0.875rem" }}>
+                  GRABANDO - Sesión de Seguridad Activa
+                </span>
+              </div>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                La grabación finalizará al cerrar esta ventana
+              </span>
+            </div>
+
+            {/* SecurityRecorder - solo activo durante viewing */}
+            <SecurityRecorder 
+              isActive={isRecordingActive}
+              onRecordingStart={handleRecordingStart}
+              onRecordingEnd={handleRecordingEnd}
+              onRecordingUploaded={handleRecordingUploaded}
+              maxDurationMs={120000}
+            />
+
             <div style={{ 
               background: "rgba(34, 197, 94, 0.1)", 
               border: "1px solid rgba(34, 197, 94, 0.3)",
@@ -355,7 +434,7 @@ function SecureViewModal({ opening, onClose, onViewed }) {
       case "confirm":
         return (
           <>
-            <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+            <Button variant="secondary" onClick={handleClose}>Cancelar</Button>
             <Button onClick={requestToken}>
               <IconUnlock size={16} />
               Solicitar Acceso Seguro
@@ -365,20 +444,25 @@ function SecureViewModal({ opening, onClose, onViewed }) {
       case "expired":
         return (
           <>
-            <Button variant="secondary" onClick={onClose}>Cerrar</Button>
+            <Button variant="secondary" onClick={handleClose}>Cerrar</Button>
             <Button onClick={requestToken}>Solicitar Nuevo Token</Button>
           </>
         );
       case "viewing":
+        return (
+          <Button onClick={handleClose}>
+            Cerrar y Finalizar Grabación
+          </Button>
+        );
       case "error":
-        return <Button onClick={onClose}>Cerrar</Button>;
+        return <Button onClick={handleClose}>Cerrar</Button>;
       default:
         return null;
     }
   };
 
   return (
-    <Modal isOpen={true} onClose={stage === "viewing" ? onClose : undefined} title="🔐 Acceso Seguro" size="lg" actions={getActions()}>
+    <Modal isOpen={true} onClose={stage === "viewing" ? handleClose : undefined} title="🔐 Acceso Seguro" size="lg" actions={getActions()}>
       {renderContent()}
     </Modal>
   );

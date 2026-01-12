@@ -62,3 +62,34 @@ def require_roles_csrf(*roles: str):
         finally:
             db.close()
     return _dep
+
+
+def require_session(
+    request: Request,
+    sfas_session: str | None = Cookie(default=None, alias="sfas_session"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")
+):
+    """
+    Dependencia que valida la sesión y CSRF, retornando datos del usuario.
+    Usado para endpoints que requieren autenticación pero no un rol específico.
+    """
+    db = SessionIdentidad()
+    try:
+        s = db.query(models.Session).filter(models.Session.id == sfas_session).first() if sfas_session else None
+        if not s or s.revoked:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        if s.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=401, detail="Session expired")
+        u = db.query(models.User).filter(models.User.id == s.user_id, models.User.is_active == True).first()
+        if not u:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        if not x_csrf_token or x_csrf_token != s.csrf_token:
+            raise HTTPException(status_code=403, detail="CSRF token missing/invalid")
+        return {
+            "user_id": u.id,
+            "username": u.username,
+            "role": u.role,
+            "session_id": s.id
+        }
+    finally:
+        db.close()

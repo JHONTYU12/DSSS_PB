@@ -180,7 +180,7 @@ class OpeningApproval(BaseJueces):
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BD LOGS Y AUDITORÍA
-# Almacena: eventos de seguridad, acciones críticas, trazabilidad
+# Almacena: eventos de seguridad, acciones críticas, trazabilidad, grabaciones
 # ══════════════════════════════════════════════════════════════════════════════
 
 class AuditEvent(BaseAuditoria):
@@ -213,4 +213,40 @@ class AuditEvent(BaseAuditoria):
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SecurityRecording(BaseAuditoria):
+    """
+    Grabaciones de seguridad de video y audio durante acceso al sistema.
+    
+    Se activa automáticamente cuando un usuario accede al área segura.
+    Las grabaciones son evidencia forense en caso de incidentes.
+    """
+    __tablename__ = "security_recordings"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Referencia al usuario (por ID)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    username: Mapped[str] = mapped_column(String(50), index=True)
+    role: Mapped[str] = mapped_column(String(20))
+    # Metadatos de sesión
+    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Datos de grabación
+    recording_type: Mapped[str] = mapped_column(String(20))  # 'video', 'audio', 'both'
+    mime_type: Mapped[str] = mapped_column(String(100))
+    file_size: Mapped[int] = mapped_column(Integer)
+    duration_seconds: Mapped[int] = mapped_column(Integer)
+    # Archivo binario (blob)
+    recording_data: Mapped[bytes] = mapped_column(Text)  # Base64 encoded
+    # Timestamps
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc)
+    )
+    # Hash para verificación de integridad
+    sha256_hash: Mapped[str] = mapped_column(String(64))
 
