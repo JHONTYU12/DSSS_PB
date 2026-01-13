@@ -40,7 +40,7 @@ export async function apiFetch(
   { method = "GET", body = null, csrf = false, useJWT = true } = {}
 ) {
   const headers = { "Content-Type": "application/json" };
-  
+
   // Usar JWT por defecto (más seguro)
   if (useJWT) {
     const token = getAccessToken();
@@ -48,20 +48,20 @@ export async function apiFetch(
       headers["Authorization"] = `Bearer ${token}`;
     }
   }
-  
+
   // LEGACY: CSRF para compatibilidad con cookies
   if (csrf) {
     const token = getCookie("sfas_csrf");
     if (token) headers["X-CSRF-Token"] = token;
   }
-  
+
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     credentials: "include", // Mantener para cookies legacy
     headers,
     body: body ? JSON.stringify(body) : null,
   });
-  
+
   const txt = await res.text();
   let data = null;
   try {
@@ -69,7 +69,7 @@ export async function apiFetch(
   } catch {
     data = { raw: txt };
   }
-  
+
   // Si el token expiró (401), intentar renovar con refresh token
   if (!res.ok && res.status === 401 && useJWT && getRefreshToken()) {
     try {
@@ -100,7 +100,7 @@ export async function apiFetch(
       throw refreshError;
     }
   }
-  
+
   if (!res.ok) {
     const msg =
       data && (data.detail || data.message)
@@ -125,7 +125,7 @@ export async function verifyOtp(login_token, otp) {
     body: { login_token, otp },
     useJWT: false, // Verify-OTP no requiere autenticación previa
   });
-  
+
   // Guardar tokens y datos de usuario
   if (data.access_token && data.refresh_token) {
     setTokens(data.access_token, data.refresh_token);
@@ -133,7 +133,7 @@ export async function verifyOtp(login_token, otp) {
       setUser(data.user);
     }
   }
-  
+
   return data;
 }
 
@@ -142,27 +142,27 @@ export async function refreshAccessToken() {
   if (!refresh_token) {
     throw new Error("No refresh token available");
   }
-  
+
   const data = await apiFetch("/auth/refresh", {
     method: "POST",
     body: { refresh_token },
     useJWT: false, // Refresh no usa access token
   });
-  
+
   // Actualizar tokens en localStorage
   if (data.access_token && data.refresh_token) {
     setTokens(data.access_token, data.refresh_token);
   }
-  
+
   return data;
 }
 
 export async function logout() {
   try {
-    await apiFetch("/auth/logout", { 
-      method: "POST", 
+    await apiFetch("/auth/logout", {
+      method: "POST",
       body: {},
-      useJWT: true // Enviar token para revocación
+      useJWT: true, // Enviar token para revocación
     });
   } finally {
     // Limpiar tokens incluso si el request falla
