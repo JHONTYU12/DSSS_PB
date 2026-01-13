@@ -5,24 +5,20 @@
 
 ##  Demo en Video
 
-🎥 **Demo del Sistema SFAS**
+🎥 **[▶️ Ver Demo Completa del Sistema SFAS](https://raw.githubusercontent.com/JHONTYU12/DSSS_PB/main/utils/paso0_Secretario.mov)**
 
-*El video de demostración está disponible en el repositorio local en `utils/paso0_Secretario.mov`*
+*Haz click en el enlace arriba para ver la demostración completa del sistema*
 
 **Contenido del video:**
 - Vista pública de casos
-- Autenticación 2FA
+- Autenticación 2FA con Google Authenticator
 - Gestión de casos por secretarios
 - Creación y firma de resoluciones por jueces
 - Sistema de aperturas M-of-N
-- Auditoría con pseudónimos
+- Auditoría con pseudónimos y privacidad
 
-**Para acceder al video:**
-1. Clona el repositorio: `git clone https://github.com/JHONTYU12/DSSS_PB.git`
-2. Navega a `utils/paso0_Secretario.mov`
-3. Abre el archivo con un reproductor de video
-
-*Nota: El repositorio debe ser público para que el video sea visible en GitHub.*
+**Duración:** ~2 minutos
+**Formato:** Video MP4
 
 ---
 
