@@ -1,7 +1,6 @@
 # LexSecure SFAS - Sistema Judicial Seguro
 
 [![Sistema LexSecure SFAS](https://img.shields.io/badge/Sistema-LexSecure%20SFAS-blue?style=for-the-badge&logo=security)](https://github.com/tu-usuario/lexsecure-sfas)
-[![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=flat-square)](LICENSE)
 [![Estado](https://img.shields.io/badge/Estado-Completo-success?style=flat-square)]()
 
 ##  Demo en Video
