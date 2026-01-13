@@ -70,9 +70,11 @@ function AppContent() {
     setLoading(true);
     try {
       const r = await verifyOtp(loginToken, otp);
-      setUser(r);
+      // El backend retorna {access_token, refresh_token, user: {username, role, user_id}}
+      const userData = r.user || r;
+      setUser(userData);
       setStage("app");
-      toast.success(`Bienvenido, ${r.username}`);
+      toast.success(`Bienvenido, ${userData.username}`);
     } catch (e) {
       setError(e.message);
     } finally {

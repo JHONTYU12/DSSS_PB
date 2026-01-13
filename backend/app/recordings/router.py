@@ -14,7 +14,7 @@ import base64
 
 from ..db.session import SessionAuditoria
 from ..db import models
-from ..rbac.deps import require_session
+from ..rbac.deps import require_auth
 from ..audit.logger import log_event
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
@@ -48,7 +48,7 @@ class RecordingInfo(BaseModel):
 async def upload_recording(
     data: RecordingUpload,
     request: Request,
-    session_data: dict = Depends(require_session)
+    user: dict = Depends(require_auth())
 ):
     """
     Sube una grabación de seguridad (video/audio) durante el acceso seguro.
@@ -68,10 +68,10 @@ async def upload_recording(
         
         # Crear registro
         recording = models.SecurityRecording(
-            user_id=session_data["user_id"],
-            username=session_data["username"],
-            role=session_data["role"],
-            session_id=session_data["session_id"],
+            user_id=user["user_id"],
+            username=user["username"],
+            role=user["role"],
+            session_id="jwt_session",  # JWT no tiene session_id tradicional
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent", "")[:500],
             recording_type=data.recording_type,
@@ -88,8 +88,8 @@ async def upload_recording(
         db.refresh(recording)
         
         log_event(
-            actor=session_data["username"],
-            role=session_data["role"],
+            actor=user["username"],
+            role=user["role"],
             action="SECURITY_RECORDING_UPLOADED",
             ip=request.client.host if request.client else None,
             success=True,
@@ -104,8 +104,8 @@ async def upload_recording(
         }
     except Exception as e:
         log_event(
-            actor=session_data.get("username"),
-            role=session_data.get("role"),
+            actor=user.get("username"),
+            role=user.get("role"),
             action="SECURITY_RECORDING_UPLOAD_FAILED",
             ip=request.client.host if request.client else None,
             success=False,
@@ -119,7 +119,7 @@ async def upload_recording(
 @router.get("/list")
 async def list_recordings(
     request: Request,
-    session_data: dict = Depends(require_session),
+    user: dict = Depends(require_auth()),
     limit: int = 50,
     offset: int = 0
 ):
@@ -134,8 +134,8 @@ async def list_recordings(
         query = db.query(models.SecurityRecording)
         
         # Solo admin y auditor pueden ver todas las grabaciones
-        if session_data["role"] not in ["admin", "auditor"]:
-            query = query.filter(models.SecurityRecording.user_id == session_data["user_id"])
+        if user["role"] not in ["admin", "auditor"]:
+            query = query.filter(models.SecurityRecording.user_id == user["user_id"])
         
         total = query.count()
         recordings = query.order_by(models.SecurityRecording.uploaded_at.desc())\
@@ -174,7 +174,7 @@ async def list_recordings(
 async def get_recording(
     recording_id: int,
     request: Request,
-    session_data: dict = Depends(require_session)
+    user: dict = Depends(require_auth())
 ):
     """
     Obtiene una grabación específica con sus datos binarios.
@@ -190,13 +190,13 @@ async def get_recording(
             raise HTTPException(status_code=404, detail="Grabación no encontrada")
         
         # Verificar permisos
-        if session_data["role"] not in ["admin", "auditor"]:
-            if recording.user_id != session_data["user_id"]:
+        if user["role"] not in ["admin", "auditor"]:
+            if recording.user_id != user["user_id"]:
                 raise HTTPException(status_code=403, detail="No tienes permiso para ver esta grabación")
         
         log_event(
-            actor=session_data["username"],
-            role=session_data["role"],
+            actor=user["username"],
+            role=user["role"],
             action="SECURITY_RECORDING_VIEWED",
             target=f"recording_{recording_id}",
             ip=request.client.host if request.client else None,
@@ -230,12 +230,12 @@ async def get_recording(
 async def delete_recording(
     recording_id: int,
     request: Request,
-    session_data: dict = Depends(require_session)
+    user: dict = Depends(require_auth())
 ):
     """
     Elimina una grabación (solo admin).
     """
-    if session_data["role"] != "admin":
+    if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar grabaciones")
     
     db = SessionAuditoria()
@@ -251,8 +251,8 @@ async def delete_recording(
         db.commit()
         
         log_event(
-            actor=session_data["username"],
-            role=session_data["role"],
+            actor=user["username"],
+            role=user["role"],
             action="SECURITY_RECORDING_DELETED",
             target=f"recording_{recording_id}",
             ip=request.client.host if request.client else None,

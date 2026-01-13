@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 import hashlib
 import secrets
-from ..rbac.deps import require_roles_csrf
+from ..rbac.deps import require_roles
 from ..db.session import SessionSecretaria, SessionJueces  # BD Secretaría + BD Jueces
 from ..db import models
 from ..audit.logger import log_event
@@ -15,33 +15,33 @@ class ResolutionCreate(BaseModel):
     content: str = Field(min_length=10, max_length=20000)
 
 @router.get("/casos")
-def my_cases(ctx=Depends(require_roles_csrf("juez"))):
-    s, u = ctx
+def my_cases(user: dict = Depends(require_roles("juez"))):
+    """Ver mis casos asignados (solo jueces)"""
     db = SessionSecretaria()  # Casos están en BD Secretaría
     try:
-        items = db.query(models.Case).filter(models.Case.assigned_judge == u.id).order_by(models.Case.id.desc()).all()
+        items = db.query(models.Case).filter(models.Case.assigned_judge == user["user_id"]).order_by(models.Case.id.desc()).all()
         return [{"id": c.id, "case_number": c.case_number, "title": c.title, "status": c.status} for c in items]
     finally:
         db.close()
 
 @router.post("/resoluciones")
-def create_resolution(payload: ResolutionCreate, request: Request, ctx=Depends(require_roles_csrf("juez"))):
-    s, u = ctx
+def create_resolution(payload: ResolutionCreate, request: Request, user: dict = Depends(require_roles("juez"))):
+    """Crear una resolución en borrador (solo jueces)"""
     db_secretaria = SessionSecretaria()  # Para verificar caso
     db_jueces = SessionJueces()  # Para crear resolución
     try:
         c = db_secretaria.query(models.Case).filter(models.Case.id == payload.case_id).first()
         if not c:
             raise HTTPException(status_code=404, detail="Case not found")
-        if c.assigned_judge != u.id:
+        if c.assigned_judge != user["user_id"]:
             raise HTTPException(status_code=403, detail="Case not assigned to this judge")
 
-        r = models.Resolution(case_id=c.id, content=payload.content, created_by=u.id, status="DRAFT")
+        r = models.Resolution(case_id=c.id, content=payload.content, created_by=user["user_id"], status="DRAFT")
         db_jueces.add(r)
         db_jueces.commit()
         db_jueces.refresh(r)
 
-        log_event(actor=u.username, role=u.role, action="RESOLUTION_CREATE", target=f"resolution:{r.id}", ip=request.client.host if request.client else None,
+        log_event(actor=user["username"], role=user["role"], action="RESOLUTION_CREATE", target=f"resolution:{r.id}", ip=request.client.host if request.client else None,
                   success=True, details={"case_id": c.id})
         return {"resolution_id": r.id, "case_id": c.id, "status": r.status}
     finally:
@@ -49,15 +49,15 @@ def create_resolution(payload: ResolutionCreate, request: Request, ctx=Depends(r
         db_jueces.close()
 
 @router.post("/resoluciones/{resolution_id}/firmar")
-def sign_resolution(resolution_id: int, request: Request, ctx=Depends(require_roles_csrf("juez"))):
-    s, u = ctx
+def sign_resolution(resolution_id: int, request: Request, user: dict = Depends(require_roles("juez"))):
+    """Firmar una resolución (solo el juez autor)"""
     db_secretaria = SessionSecretaria()  # Para actualizar estado del caso
     db_jueces = SessionJueces()  # Para firmar resolución
     try:
         r = db_jueces.query(models.Resolution).filter(models.Resolution.id == resolution_id).first()
         if not r:
             raise HTTPException(status_code=404, detail="Resolution not found")
-        if r.created_by != u.id:
+        if r.created_by != user["user_id"]:
             raise HTTPException(status_code=403, detail="Only author judge can sign this resolution")
 
         # Compute hash (evidence for ledger)
@@ -77,7 +77,7 @@ def sign_resolution(resolution_id: int, request: Request, ctx=Depends(require_ro
             c.status = "RESOLUTION_SIGNED"
             db_secretaria.commit()
 
-        log_event(actor=u.username, role=u.role, action="RESOLUTION_SIGN", target=f"resolution:{r.id}", ip=request.client.host if request.client else None,
+        log_event(actor=user["username"], role=user["role"], action="RESOLUTION_SIGN", target=f"resolution:{r.id}", ip=request.client.host if request.client else None,
                   success=True, details={"hash": h, "sig": f"{sig[:12]}..."})
         # In future: publish to ledger; here we return evidence payload
         return {"resolution_id": r.id, "status": r.status, "hash": h, "signature": sig, "ledger_event": {"type":"RESOLUTION_SIGNED","ts": r.signed_at.isoformat()}}

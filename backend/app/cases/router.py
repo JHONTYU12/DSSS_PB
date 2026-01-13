@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel, Field
-from ..rbac.deps import require_roles_csrf
+from ..rbac.deps import require_roles
 from ..db.session import SessionSecretaria, SessionIdentidad  # BD Secretaría + BD Identidad
 from ..db import models
 from ..audit.logger import log_event
@@ -14,8 +14,8 @@ class CaseCreate(BaseModel):
     assign_to_judge_username: str | None = None
 
 @router.post("/casos")
-def create_case(payload: CaseCreate, request: Request, ctx=Depends(require_roles_csrf("secretario"))):
-    s, u = ctx
+def create_case(payload: CaseCreate, request: Request, user: dict = Depends(require_roles("secretario"))):
+    """Crear un nuevo caso (solo secretarios)"""
     db_identidad = SessionIdentidad()  # Para buscar juez
     db_secretaria = SessionSecretaria()  # Para crear caso
     try:
@@ -33,7 +33,7 @@ def create_case(payload: CaseCreate, request: Request, ctx=Depends(require_roles
             case_number=payload.case_number,
             title=payload.title,
             parties=payload.parties,
-            created_by=u.id,
+            created_by=user["user_id"],
             assigned_judge=assigned_id,
             status="CREATED"
         )
@@ -41,7 +41,7 @@ def create_case(payload: CaseCreate, request: Request, ctx=Depends(require_roles
         db_secretaria.commit()
         db_secretaria.refresh(c)
 
-        log_event(actor=u.username, role=u.role, action="CASE_CREATE", target=f"case:{c.id}", ip=request.client.host if request.client else None,
+        log_event(actor=user["username"], role=user["role"], action="CASE_CREATE", target=f"case:{c.id}", ip=request.client.host if request.client else None,
                   success=True, details={"case_number": payload.case_number})
         return {"case_id": c.id, "case_number": c.case_number, "status": c.status, "assigned_judge": payload.assign_to_judge_username}
     finally:
@@ -49,8 +49,8 @@ def create_case(payload: CaseCreate, request: Request, ctx=Depends(require_roles
         db_secretaria.close()
 
 @router.get("/casos")
-def list_cases(ctx=Depends(require_roles_csrf("secretario"))):
-    s, u = ctx
+def list_cases(user: dict = Depends(require_roles("secretario"))):
+    """Listar todos los casos (solo secretarios)"""
     db = SessionSecretaria()  # BD Secretaría
     try:
         items = db.query(models.Case).order_by(models.Case.id.desc()).limit(50).all()

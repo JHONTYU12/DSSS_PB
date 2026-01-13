@@ -7,6 +7,12 @@ from datetime import datetime, timezone, timedelta
 from ..db.session import SessionIdentidad  # BD Identidades y Acceso
 from ..db import models
 from ..core.settings import settings
+from ..core.jwt_handler import (
+    create_access_token,
+    create_refresh_token,
+    validate_refresh_token,
+    revoke_token
+)
 from ..audit.logger import log_event
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -20,6 +26,9 @@ class LoginReq(BaseModel):
 class VerifyOtpReq(BaseModel):
     login_token: str
     otp: str = Field(min_length=6, max_length=6)
+
+class RefreshTokenReq(BaseModel):
+    refresh_token: str
 
 @router.post("/login")
 def login(req: LoginReq, request: Request):
@@ -46,6 +55,14 @@ def login(req: LoginReq, request: Request):
 
 @router.post("/verify-otp")
 def verify_otp(req: VerifyOtpReq, response: Response, request: Request):
+    """
+    Verifica el OTP y devuelve JWT tokens.
+    Retorna:
+    - access_token: JWT de corta duración (15 min) para autenticar requests
+    - refresh_token: JWT de larga duración (7 días) para renovar access_token
+    - token_type: "bearer"
+    - expires_in: segundos hasta expiración del access_token
+    """
     entry = LOGIN_TOKENS.get(req.login_token)
     if not entry:
         raise HTTPException(status_code=401, detail="OTP challenge expired")
@@ -63,64 +80,94 @@ def verify_otp(req: VerifyOtpReq, response: Response, request: Request):
         current_otp = totp.now()
         print(f"[DEBUG] User: {u.username}, Secret: {u.totp_secret}, Current OTP: {current_otp}, Received OTP: {req.otp}")
         
-        if not totp.verify(req.otp, valid_window=2):  # Aumentamos la ventana a 2 (±1 minuto)
+        if not totp.verify(req.otp, valid_window=2):
             log_event(actor=u.username, role=u.role, action="AUTH_OTP_VERIFY", ip=request.client.host if request.client else None,
                       success=False, details=f"invalid otp - expected: {current_otp}, received: {req.otp}")
             raise HTTPException(status_code=401, detail="Invalid OTP")
 
-        # Create session
-        session_id = secrets.token_hex(16)
-        csrf_token = secrets.token_hex(16)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-        db.add(models.Session(id=session_id, user_id=u.id, csrf_token=csrf_token, expires_at=expires_at, revoked=False))
-        db.commit()
-
-        # Cookies
-        cookie_kwargs = dict(
-            httponly=True,
-            secure=settings.cookie_secure,
-            samesite="strict",
-            path="/",
-            max_age=3600,
-        )
-        if settings.cookie_domain:
-            cookie_kwargs["domain"] = settings.cookie_domain
-
-        response.set_cookie(key=settings.cookie_name, value=session_id, **cookie_kwargs)
-
-        # CSRF cookie must be readable by JS
-        csrf_kwargs = dict(
-            httponly=False,
-            secure=settings.cookie_secure,
-            samesite="strict",
-            path="/",
-            max_age=3600,
-        )
-        if settings.cookie_domain:
-            csrf_kwargs["domain"] = settings.cookie_domain
-        response.set_cookie(key=settings.csrf_cookie_name, value=csrf_token, **csrf_kwargs)
+        # Crear JWT tokens (mejores prácticas de seguridad)
+        access_token = create_access_token(u.id, u.username, u.role)
+        refresh_token = create_refresh_token(u.id, u.username)
 
         LOGIN_TOKENS.pop(req.login_token, None)
         log_event(actor=u.username, role=u.role, action="AUTH_LOGIN_SUCCESS", ip=request.client.host if request.client else None,
-                  success=True, details="session created")
-        return {"user_id": u.id, "username": u.username, "role": u.role}
+                  success=True, details="JWT tokens issued")
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": settings.jwt_access_token_expire_minutes * 60,
+            "user": {
+                "user_id": u.id,
+                "username": u.username,
+                "role": u.role
+            }
+        }
+    finally:
+        db.close()
+
+@router.post("/refresh")
+def refresh(req: RefreshTokenReq, request: Request):
+    """
+    Renueva el access_token usando un refresh_token válido.
+    Implementa rotación de refresh tokens por seguridad:
+    - Valida el refresh token
+    - Emite nuevo access_token
+    - Emite nuevo refresh_token (rotación)
+    - Revoca el refresh token antiguo
+    """
+    try:
+        payload = validate_refresh_token(req.refresh_token)
+    except Exception as e:
+        log_event(actor=None, role=None, action="AUTH_REFRESH_FAILED", 
+                  ip=request.client.host if request.client else None,
+                  success=False, details=str(e))
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    db = SessionIdentidad()
+    try:
+        u = db.query(models.User).filter(
+            models.User.id == payload["user_id"],
+            models.User.username == payload["username"],
+            models.User.is_active == True
+        ).first()
+        
+        if not u:
+            raise HTTPException(status_code=401, detail="User not found or inactive")
+
+        # Crear nuevos tokens (rotación de refresh token por seguridad)
+        new_access_token = create_access_token(u.id, u.username, u.role)
+        new_refresh_token = create_refresh_token(u.id, u.username)
+        
+        # Revocar el refresh token antiguo (previene reuso)
+        revoke_token(req.refresh_token)
+        
+        log_event(actor=u.username, role=u.role, action="AUTH_TOKEN_REFRESHED",
+                  ip=request.client.host if request.client else None,
+                  success=True, details="new tokens issued")
+        
+        return {
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "expires_in": settings.jwt_access_token_expire_minutes * 60
+        }
     finally:
         db.close()
 
 @router.post("/logout")
-def logout(response: Response, request: Request, sfas_session: str | None = Cookie(default=None, alias="sfas_session")):
-    if sfas_session:
-        db = SessionIdentidad()
-        try:
-            s = db.query(models.Session).filter(models.Session.id == sfas_session).first()
-            if s:
-                s.revoked = True
-                db.commit()
-        finally:
-            db.close()
-
-    response.delete_cookie(settings.cookie_name, path="/")
-    response.delete_cookie(settings.csrf_cookie_name, path="/")
-    log_event(actor=None, role=None, action="AUTH_LOGOUT", ip=request.client.host if request.client else None,
-              success=True, details="logout")
+def logout(request: Request):
+    """
+    Logout con revocación de tokens JWT.
+    El cliente debe enviar el token en Authorization header.
+    """
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        revoke_token(token)
+        log_event(actor=None, role=None, action="AUTH_LOGOUT", 
+                  ip=request.client.host if request.client else None,
+                  success=True, details="token revoked")
+    
     return {"message": "logged out"}

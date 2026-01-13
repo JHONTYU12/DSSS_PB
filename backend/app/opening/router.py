@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone, timedelta
 import secrets
-from ..rbac.deps import require_roles_csrf
+from ..rbac.deps import require_roles
 from ..db.session import SessionSecretaria, SessionJueces, SessionIdentidad  # Múltiples BDs
 from ..db import models
 from ..audit.logger import log_event
@@ -18,20 +18,20 @@ class OpeningCreate(BaseModel):
     m_required: int = Field(default=2, ge=1, le=5)
 
 @router.post("/solicitudes")
-def create_request(payload: OpeningCreate, request: Request, ctx=Depends(require_roles_csrf("admin"))):
-    s, u = ctx
+def create_request(payload: OpeningCreate, request: Request, user: dict = Depends(require_roles("admin"))):
+    """Crear solicitud de apertura M-de-N (solo admin)"""
     db_secretaria = SessionSecretaria()  # Para verificar caso
     db_jueces = SessionJueces()  # Para crear solicitud de apertura
     try:
         c = db_secretaria.query(models.Case).filter(models.Case.id == payload.case_id).first()
         if not c:
             raise HTTPException(status_code=404, detail="Case not found")
-        req = models.OpeningRequest(case_id=c.id, reason=payload.reason, m_required=payload.m_required, created_by=u.id, status="PENDING")
+        req = models.OpeningRequest(case_id=c.id, reason=payload.reason, m_required=payload.m_required, created_by=user["user_id"], status="PENDING")
         db_jueces.add(req)
         db_jueces.commit()
         db_jueces.refresh(req)
 
-        log_event(actor=u.username, role=u.role, action="OPENING_CREATE", target=f"opening:{req.id}", ip=request.client.host if request.client else None,
+        log_event(actor=user["username"], role=user["role"], action="OPENING_CREATE", target=f"opening:{req.id}", ip=request.client.host if request.client else None,
                   success=True, details={"case_id": c.id, "m_required": payload.m_required})
         return {"request_id": req.id, "status": req.status, "m_required": req.m_required}
     finally:
@@ -39,8 +39,8 @@ def create_request(payload: OpeningCreate, request: Request, ctx=Depends(require
         db_jueces.close()
 
 @router.get("/solicitudes")
-def list_requests(ctx=Depends(require_roles_csrf("admin","custodio"))):
-    s, u = ctx
+def list_requests(user: dict = Depends(require_roles("admin", "custodio"))):
+    """Listar solicitudes de apertura (admin y custodios)"""
     db = SessionJueces()  # Aperturas están en BD Jueces
     try:
         reqs = db.query(models.OpeningRequest).order_by(models.OpeningRequest.id.desc()).limit(50).all()
@@ -66,8 +66,8 @@ class ApprovalReq(BaseModel):
     decision: str = Field(default="APPROVE", pattern="^(APPROVE|REJECT)$")
 
 @router.post("/solicitudes/{request_id}/aprobar")
-def approve_request(request_id: int, payload: ApprovalReq, request: Request, ctx=Depends(require_roles_csrf("custodio"))):
-    s, u = ctx
+def approve_request(request_id: int, payload: ApprovalReq, request: Request, user: dict = Depends(require_roles("custodio"))):
+    """Aprobar o rechazar solicitud de apertura (solo custodios)"""
     db = SessionJueces()  # Aperturas y aprobaciones en BD Jueces
     try:
         req = db.query(models.OpeningRequest).filter(models.OpeningRequest.id == request_id).first()
@@ -77,12 +77,12 @@ def approve_request(request_id: int, payload: ApprovalReq, request: Request, ctx
         # Prevent duplicate approvals by same custodian
         existing = db.query(models.OpeningApproval).filter(
             models.OpeningApproval.request_id == request_id,
-            models.OpeningApproval.custodian_id == u.id
+            models.OpeningApproval.custodian_id == user["user_id"]
         ).first()
         if existing:
             raise HTTPException(status_code=409, detail="Already voted")
 
-        db.add(models.OpeningApproval(request_id=request_id, custodian_id=u.id, decision=payload.decision))
+        db.add(models.OpeningApproval(request_id=request_id, custodian_id=user["user_id"], decision=payload.decision))
         db.commit()
 
         # Recompute threshold
@@ -95,7 +95,7 @@ def approve_request(request_id: int, payload: ApprovalReq, request: Request, ctx
             req.status = "APPROVED_M_REACHED"
             db.commit()
 
-        log_event(actor=u.username, role=u.role, action="OPENING_APPROVAL", target=f"opening:{request_id}", ip=request.client.host if request.client else None,
+        log_event(actor=user["username"], role=user["role"], action="OPENING_APPROVAL", target=f"opening:{request_id}", ip=request.client.host if request.client else None,
                   success=True, details={"decision": payload.decision, "approvals": approvals})
         return {"request_id": request_id, "status": req.status, "approvals": approvals, "m_required": req.m_required}
     finally:
@@ -107,9 +107,8 @@ def approve_request(request_id: int, payload: ApprovalReq, request: Request, ctx
 # ============================================
 
 @router.get("/aprobadas")
-def list_approved_openings(ctx=Depends(require_roles_csrf("auditor"))):
+def list_approved_openings(user: dict = Depends(require_roles("auditor"))):
     """List approved openings that haven't been viewed yet (for auditor)"""
-    s, u = ctx
     db_jueces = SessionJueces()  # Aperturas en BD Jueces
     db_secretaria = SessionSecretaria()  # Casos en BD Secretaría
     try:
@@ -137,12 +136,11 @@ def list_approved_openings(ctx=Depends(require_roles_csrf("auditor"))):
 
 
 @router.post("/solicitar-vista/{request_id}")
-def request_secure_view(request_id: int, request: Request, ctx=Depends(require_roles_csrf("auditor"))):
+def request_secure_view(request_id: int, request: Request, user: dict = Depends(require_roles("auditor"))):
     """
     Generate a one-time secure view token for an approved opening.
     Security: Token is valid for 2 minutes and can only be used once.
     """
-    s, u = ctx
     db = SessionJueces()  # Aperturas en BD Jueces
     try:
         req = db.query(models.OpeningRequest).filter(models.OpeningRequest.id == request_id).first()
@@ -175,7 +173,7 @@ def request_secure_view(request_id: int, request: Request, ctx=Depends(require_r
         db.commit()
         
         log_event(
-            actor=u.username, role=u.role, action="OPENING_VIEW_TOKEN_GENERATED",
+            actor=user["username"], role=user["role"], action="OPENING_VIEW_TOKEN_GENERATED",
             target=f"opening:{request_id}", ip=request.client.host if request.client else None,
             success=True, details={"token_expires": expires.isoformat()}
         )
@@ -190,12 +188,11 @@ def request_secure_view(request_id: int, request: Request, ctx=Depends(require_r
 
 
 @router.post("/ver-seguro/{request_id}")
-def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depends(require_roles_csrf("auditor"))):
+def view_secure_opening(request_id: int, token: str, request: Request, user: dict = Depends(require_roles("auditor"))):
     """
     View the sensitive information of an approved opening using the secure token.
     Security: One-time view only. After viewing, information is no longer accessible.
     """
-    s, u = ctx
     db_jueces = SessionJueces()  # Aperturas y resoluciones
     db_secretaria = SessionSecretaria()  # Casos
     db_identidad = SessionIdentidad()  # Usuarios
@@ -207,7 +204,7 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
         # Security checks
         if req.viewed_at is not None:
             log_event(
-                actor=u.username, role=u.role, action="OPENING_VIEW_DENIED",
+                actor=user["username"], role=user["role"], action="OPENING_VIEW_DENIED",
                 target=f"opening:{request_id}", ip=request.client.host if request.client else None,
                 success=False, details={"reason": "Already viewed"}
             )
@@ -215,7 +212,7 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
         
         if not req.view_token or req.view_token != token:
             log_event(
-                actor=u.username, role=u.role, action="OPENING_VIEW_DENIED",
+                actor=user["username"], role=user["role"], action="OPENING_VIEW_DENIED",
                 target=f"opening:{request_id}", ip=request.client.host if request.client else None,
                 success=False, details={"reason": "Invalid token"}
             )
@@ -223,7 +220,7 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
         
         if not req.view_token_expires or req.view_token_expires < datetime.now(timezone.utc):
             log_event(
-                actor=u.username, role=u.role, action="OPENING_VIEW_DENIED",
+                actor=user["username"], role=user["role"], action="OPENING_VIEW_DENIED",
                 target=f"opening:{request_id}", ip=request.client.host if request.client else None,
                 success=False, details={"reason": "Token expired"}
             )
@@ -254,13 +251,13 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
         
         # Mark as viewed (ONE-TIME VIEW)
         req.viewed_at = datetime.now(timezone.utc)
-        req.viewed_by = u.id
+        req.viewed_by = user["user_id"]
         req.view_token = None  # Invalidate token
         req.view_token_expires = None
         db_jueces.commit()
         
         log_event(
-            actor=u.username, role=u.role, action="OPENING_VIEWED",
+            actor=user["username"], role=user["role"], action="OPENING_VIEWED",
             target=f"opening:{request_id}", ip=request.client.host if request.client else None,
             success=True, details={"case_id": case.id, "viewed_sensitive_info": True}
         )

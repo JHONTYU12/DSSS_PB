@@ -46,7 +46,15 @@ class Settings(BaseModel):
     app_master_key: str = os.getenv("APP_MASTER_KEY", "CHANGE_ME")
     
     # ══════════════════════════════════════════════════════════════════════════════
-    # Configuración de Cookies (Sesiones)
+    # JWT Configuration (Secure Token-Based Authentication)
+    # ══════════════════════════════════════════════════════════════════════════════
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "CHANGE_ME_IN_PRODUCTION_USE_STRONG_SECRET")
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 15  # Access token: 15 minutos (corta vida por seguridad)
+    jwt_refresh_token_expire_days: int = 7     # Refresh token: 7 días
+    
+    # ══════════════════════════════════════════════════════════════════════════════
+    # Configuración de Cookies (Legacy - mantener para compatibilidad)
     # ══════════════════════════════════════════════════════════════════════════════
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
     cookie_domain: str | None = os.getenv("COOKIE_DOMAIN") or None
