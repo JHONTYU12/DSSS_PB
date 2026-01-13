@@ -1,7 +1,9 @@
 # LexSecure SFAS - Sistema Judicial Seguro
 
-[![Sistema LexSecure SFAS](https://img.shields.io/badge/Sistema-LexSecure%20SFAS-blue?style=for-the-badge&logo=security)](https://github.com/tu-usuario/lexsecure-sfas)
-[![Estado](https://img.shields.io/badge/Estado-Completo-success?style=flat-square)]()
+[![Sistema](https://img.shields.io/badge/Sistema-LexSecure_SFAS-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JHONTYU12/DSSS_PB)
+[![Estado](https://img.shields.io/badge/Estado-Completo-success?style=for-the-badge&logo=check-circle&logoColor=white)]()
+[![Versión](https://img.shields.io/badge/Versión-2.0-blue?style=for-the-badge&logo=semver&logoColor=white)]()
+[![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=for-the-badge&logo=open-source-initiative&logoColor=white)]()
 
 ##  Demo en Video
 
