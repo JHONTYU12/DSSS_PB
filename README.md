@@ -5,10 +5,9 @@
 
 ##  Demo en Video
 
-<video width="100%" height="400" controls>
-  <source src="https://raw.githubusercontent.com/JHONTYU12/DSSS_PB/main/utils/paso0_Secretario.mov" type="video/quicktime">
+<video width="100%" height="400" controls poster="https://img.shields.io/badge/🎬-Demo_Sistema_SFAS-blue?style=for-the-badge">
+  <source src="https://raw.githubusercontent.com/JHONTYU12/DSSS_PB/main/utils/paso0_Secretario.mov" type="video/mp4">
   Tu navegador no soporta el elemento de video.
-  <a href="https://raw.githubusercontent.com/JHONTYU12/DSSS_PB/main/utils/paso0_Secretario.mov">Descargar video</a>
 </video>
 
 *Demostración completa del sistema: desde la vista pública hasta la gestión interna con autenticación 2FA.*
@@ -22,6 +21,8 @@
 - Auditoría con pseudónimos y privacidad
 
 **Duración:** ~2 minutos
+
+**Nota:** Si el video no se reproduce, [haz click aquí para descargarlo](https://raw.githubusercontent.com/JHONTYU12/DSSS_PB/main/utils/paso0_Secretario.mov)
 
 ---
 
