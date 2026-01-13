@@ -1,15 +1,15 @@
-# LexSecure SFAS - Sistema Judicial Seguro
+# LexSecure SFAS — Sistema Judicial Seguro
 
-[![Sistema](https://img.shields.io/badge/Sistema-LexSecure_SFAS-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JHONTYU12/DSSS_PB)
-[![Estado](https://img.shields.io/badge/Estado-Completo-success?style=for-the-badge&logo=check-circle&logoColor=white)]()
-[![Versión](https://img.shields.io/badge/Versión-2.0-blue?style=for-the-badge&logo=semver&logoColor=white)]()
-[![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=for-the-badge&logo=open-source-initiative&logoColor=white)]()
+<!-- Badges: se mantienen en una sola línea para mejor render -->
+[![Sistema](https://img.shields.io/badge/LexSecure%20SFAS-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JHONTYU12/DSSS_PB) [![Estado](https://img.shields.io/badge/Estado-Completo-success?style=for-the-badge&logo=check-circle&logoColor=white)]() [![Versión](https://img.shields.io/badge/Versión-2.0-blue?style=for-the-badge&logo=semver&logoColor=white)]() [![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=for-the-badge&logo=open-source-initiative&logoColor=white)]()
 
-##  Demo en Video
+## Demo en Video
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/vjgBdObsVW8" title="Demo Completa Sistema SFAS" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+[![▶ Ver Demo: LexSecure SFAS](https://img.youtube.com/vi/vjgBdObsVW8/hqdefault.jpg)](https://www.youtube.com/watch?v=vjgBdObsVW8)
 
-*Demostración completa del sistema: desde la vista pública hasta la gestión interna con autenticación 2FA.*
+*Haz click en la miniatura para reproducir el video en YouTube (mejor compatibilidad en GitHub).* 
+
+**Demostración completa del sistema:** vista pública, autenticación 2FA, gestión interna y auditoría.
 
 **Contenido del video:**
 - Vista pública de casos
