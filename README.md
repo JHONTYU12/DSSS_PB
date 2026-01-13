@@ -7,7 +7,13 @@
 
 [![▶ Ver Demo: LexSecure SFAS](https://img.youtube.com/vi/vjgBdObsVW8/hqdefault.jpg)](https://www.youtube.com/watch?v=vjgBdObsVW8)
 
-*Haz click en la miniatura para reproducir el video en YouTube (mejor compatibilidad en GitHub).* 
+Si quieres reproducir el video directamente dentro del repositorio mientras lees el README, sigue cualquiera de estas opciones:
+
+- Opción A (recomendado): Habilita **GitHub Pages** para este repositorio (fuente: rama `main`, carpeta `/docs`) y abre:
+
+   https://JHONTYU12.github.io/DSSS_PB/demo.html
+
+- Opción B (temporal): Abre la página local `docs/demo.html` desde el navegador del repositorio en GitHub Pages o descarga el video y reprodúcelo localmente.
 
 **Demostración completa del sistema:** vista pública, autenticación 2FA, gestión interna y auditoría.
 
