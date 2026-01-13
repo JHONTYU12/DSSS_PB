@@ -5,12 +5,17 @@
 
 ##  Demo en Video
 
-<video width="100%" controls>
-  <source src="utils/paso0_Secretario.mov" type="video/mp4">
-  Tu navegador no soporta el elemento de video.
-</video>
+🎥 **[Ver Demo Completa del Sistema](utils/paso0_Secretario.mov)**
 
 *Demostración completa del sistema: desde la vista pública hasta la gestión interna con autenticación 2FA.*
+
+**Nota:** El video muestra el flujo completo del sistema SFAS, incluyendo:
+- Vista pública de casos
+- Autenticación 2FA
+- Gestión de casos por secretarios
+- Creación y firma de resoluciones por jueces
+- Sistema de aperturas M-of-N
+- Auditoría con pseudónimos
 
 ---
 
