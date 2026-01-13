@@ -5,7 +5,7 @@
 
 ##  Demo en Video
 
-🎥 **[Ver Demo Completa del Sistema](utils/paso0_Secretario.mov)**
+🎥 **[Ver Demo Completa del Sistema](https://github.com/JHONTYU12/DSSS_PB/raw/main/utils/paso0_Secretario.mov)**
 
 *Demostración completa del sistema: desde la vista pública hasta la gestión interna con autenticación 2FA.*
 
