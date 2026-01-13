@@ -32,7 +32,7 @@ def create_request(payload: OpeningCreate, request: Request, ctx=Depends(require
         db_jueces.refresh(req)
 
         log_event(actor=u.username, role=u.role, action="OPENING_CREATE", target=f"opening:{req.id}", ip=request.client.host if request.client else None,
-                  success=True, details=f"case_id={c.id} m={payload.m_required}")
+                  success=True, details={"case_id": c.id, "m_required": payload.m_required})
         return {"request_id": req.id, "status": req.status, "m_required": req.m_required}
     finally:
         db_secretaria.close()
@@ -96,7 +96,7 @@ def approve_request(request_id: int, payload: ApprovalReq, request: Request, ctx
             db.commit()
 
         log_event(actor=u.username, role=u.role, action="OPENING_APPROVAL", target=f"opening:{request_id}", ip=request.client.host if request.client else None,
-                  success=True, details=f"decision={payload.decision} approvals={approvals}")
+                  success=True, details={"decision": payload.decision, "approvals": approvals})
         return {"request_id": request_id, "status": req.status, "approvals": approvals, "m_required": req.m_required}
     finally:
         db.close()
@@ -177,7 +177,7 @@ def request_secure_view(request_id: int, request: Request, ctx=Depends(require_r
         log_event(
             actor=u.username, role=u.role, action="OPENING_VIEW_TOKEN_GENERATED",
             target=f"opening:{request_id}", ip=request.client.host if request.client else None,
-            success=True, details=f"token_expires={expires.isoformat()}"
+            success=True, details={"token_expires": expires.isoformat()}
         )
         
         return {
@@ -209,7 +209,7 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
             log_event(
                 actor=u.username, role=u.role, action="OPENING_VIEW_DENIED",
                 target=f"opening:{request_id}", ip=request.client.host if request.client else None,
-                success=False, details="Already viewed"
+                success=False, details={"reason": "Already viewed"}
             )
             raise HTTPException(status_code=410, detail="This opening has already been viewed")
         
@@ -217,7 +217,7 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
             log_event(
                 actor=u.username, role=u.role, action="OPENING_VIEW_DENIED",
                 target=f"opening:{request_id}", ip=request.client.host if request.client else None,
-                success=False, details="Invalid token"
+                success=False, details={"reason": "Invalid token"}
             )
             raise HTTPException(status_code=403, detail="Invalid or expired token")
         
@@ -225,7 +225,7 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
             log_event(
                 actor=u.username, role=u.role, action="OPENING_VIEW_DENIED",
                 target=f"opening:{request_id}", ip=request.client.host if request.client else None,
-                success=False, details="Token expired"
+                success=False, details={"reason": "Token expired"}
             )
             raise HTTPException(status_code=403, detail="Token has expired. Request a new token.")
         
@@ -262,7 +262,7 @@ def view_secure_opening(request_id: int, token: str, request: Request, ctx=Depen
         log_event(
             actor=u.username, role=u.role, action="OPENING_VIEWED",
             target=f"opening:{request_id}", ip=request.client.host if request.client else None,
-            success=True, details=f"case_id={case.id} viewed_sensitive_info=true"
+            success=True, details={"case_id": case.id, "viewed_sensitive_info": True}
         )
         
         return {

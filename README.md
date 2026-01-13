@@ -146,7 +146,7 @@ final/
 │       │   └── router.py      # Sistema M-de-N para aperturas
 │       ├── audit/
 │       │   ├── __init__.py
-│       │   ├── logger.py      # Logger de eventos con pseudónimos
+│       │   ├── logger.py      # Logger de eventos con pseudónimos y redacción
 │       │   └── router.py      # Consulta de logs (auditor)
 │       └── public/            # ← API pública sin autenticación
 │           ├── __init__.py
@@ -320,7 +320,7 @@ Juez → Autenticado → Dashboard de Juez
 11. `backend/app/judge/router.py` - Juez: crear/firmar resoluciones
 12. `backend/app/opening/router.py` - Admin/Custodio: aperturas M-de-N
 13. `backend/app/audit/router.py` - Auditor: consulta logs
-14. `backend/app/audit/logger.py` - Sistema de logging con pseudónimos
+14. `backend/app/audit/logger.py` - Sistema de logging con pseudónimos y redacción de details
 
 #### **Paso 6: API Pública (1 archivo) ← NUEVO**
 15. `backend/app/public/router.py` - **CRÍTICO**: API sin autenticación, sanitizada
@@ -760,28 +760,49 @@ add_header X-Frame-Options "DENY" always;
 add_header X-Content-Type-Options "nosniff" always;
 ```
 
-### **7. Auditoría con Pseudónimos**
+### **7. Auditoría con Pseudónimos y Redacción**
 
-**Problema:** Logs de auditoría deben rastrear quién hizo qué, pero no deben permitir a auditores identificar funcionarios.
+**Problema:** Logs de auditoría deben rastrear quién hizo qué, pero no deben permitir a auditores identificar funcionarios o exponer datos sensibles.
 
 **Solución:**
+- **Pseudónimos HMAC:** Para actor y target, se generan pseudónimos consistentes usando HMAC-SHA256.
+- **Redacción de Details:** Los detalles se estructuran como JSON y se aplican políticas de redacción:
+  - Usernames → `user_ref=<pseudónimo>`
+  - IDs sensibles → `[REDACTED]`
+  - Otros datos se preservan
+
 ```python
 # logger.py
-AUDIT_HMAC_KEY = os.getenv("AUDIT_HMAC_KEY", "secret_key_for_audit")
+def redact_sensitive_details(details: dict | str) -> str:
+    """
+    Aplica política de redacción a details.
+    - Usernames: reemplaza por user_ref=<HMAC>
+    - IDs: [REDACTED]
+    - Retorna JSON string estructurado
+    """
+    if isinstance(details, dict):
+        redacted = {}
+        for key, value in details.items():
+            if key.lower() in ['username', 'user', 'actor']:
+                redacted[key] = f"user_ref={pseudonymize(value, 'user')}"
+            elif key.lower() in ['case_number', 'case_id', 'resolution_id']:
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = value
+        return json.dumps(redacted)
+    return redact_string_details(details)
+```
 
-def _generate_user_pseudonym(user_uuid: str) -> str:
-    """
-    Genera pseudónimo usando HMAC-SHA256.
-    
-    user_uuid → HMAC(key, uuid) → hex string
-    
-    Propiedades:
-    - Mismo UUID siempre genera mismo pseudónimo (consistencia)
-    - Sin la key, no se puede revertir (privacidad)
-    - Auditor ve "PSEUDONYM_a3f4b2..." en lugar de "c9e8b4a1-..."
-    """
-    h = hmac.new(AUDIT_HMAC_KEY.encode(), user_uuid.encode(), hashlib.sha256)
-    return f"PSEUDONYM_{h.hexdigest()[:16]}"
+**Ejemplo de log auditado:**
+```json
+{
+  "actor_ref": "PSEUDONYM_a3f4b2c1",
+  "role": "secretario",
+  "action": "CASE_CREATE",
+  "target_ref": "TARGET_5d7e9f2a",
+  "details": "{\"case_number\": \"[REDACTED]\", \"assigned_judge\": \"user_ref=USER_8b4c2f9e\"}",
+  "success": true
+}
 ```
 
 ---

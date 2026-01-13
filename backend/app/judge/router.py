@@ -42,7 +42,7 @@ def create_resolution(payload: ResolutionCreate, request: Request, ctx=Depends(r
         db_jueces.refresh(r)
 
         log_event(actor=u.username, role=u.role, action="RESOLUTION_CREATE", target=f"resolution:{r.id}", ip=request.client.host if request.client else None,
-                  success=True, details=f"case_id={c.id}")
+                  success=True, details={"case_id": c.id})
         return {"resolution_id": r.id, "case_id": c.id, "status": r.status}
     finally:
         db_secretaria.close()
@@ -78,7 +78,7 @@ def sign_resolution(resolution_id: int, request: Request, ctx=Depends(require_ro
             db_secretaria.commit()
 
         log_event(actor=u.username, role=u.role, action="RESOLUTION_SIGN", target=f"resolution:{r.id}", ip=request.client.host if request.client else None,
-                  success=True, details=f"hash={h} sig={sig[:12]}...")
+                  success=True, details={"hash": h, "sig": f"{sig[:12]}..."})
         # In future: publish to ledger; here we return evidence payload
         return {"resolution_id": r.id, "status": r.status, "hash": h, "signature": sig, "ledger_event": {"type":"RESOLUTION_SIGNED","ts": r.signed_at.isoformat()}}
     finally:

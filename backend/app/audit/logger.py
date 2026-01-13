@@ -1,5 +1,6 @@
 import hmac
 import hashlib
+import json
 from ..db.session import SessionAuditoria  # BD Logs y Auditoría
 from ..db import models
 from ..core.settings import settings
@@ -17,7 +18,7 @@ def pseudonymize(value: str | None, prefix: str = "") -> str | None:
     return h.hexdigest()[:16].upper()  # 16 chars hex = 64 bits, suficiente para pseudónimo
 
 def log_event(actor: str | None, role: str | None, action: str, target: str | None = None,
-              ip: str | None = None, success: bool = True, details: str | None = None):
+              ip: str | None = None, success: bool = True, details: dict | str | None = None):
     """
     Registra un evento de auditoría con datos pseudonimizados.
     - actor_pseudo: HMAC del username (para correlación sin revelar identidad)
@@ -49,10 +50,39 @@ def log_event(actor: str | None, role: str | None, action: str, target: str | No
     finally:
         db.close()
 
-def redact_sensitive_details(details: str) -> str:
+def redact_sensitive_details(details: dict | str | None) -> str | None:
     """
     Redacta información sensible de los detalles del log.
-    Remueve: case_id=X, user=X, username=X, id=X, etc.
+    Aplica política de redacción: reemplaza usernames por user_ref=<pseudónimo>,
+    IDs por [REDACTED], etc.
+    Retorna JSON string si es dict, o string redactado.
+    """
+    if not details:
+        return None
+    
+    if isinstance(details, str):
+        # Si es string, aplicar redacción básica
+        return redact_string_details(details)
+    elif isinstance(details, dict):
+        # Si es dict, aplicar redacción a valores
+        redacted = {}
+        for key, value in details.items():
+            if isinstance(value, str):
+                if key.lower() in ['username', 'user', 'actor']:
+                    # Reemplazar username por pseudónimo
+                    redacted[key] = f"user_ref={pseudonymize(value, 'user')}"
+                elif key.lower() in ['case_number', 'case_id', 'resolution_id', 'id']:
+                    redacted[key] = "[REDACTED]"
+                else:
+                    redacted[key] = redact_string_details(value)
+            else:
+                redacted[key] = value  # No redactar no-strings
+        return json.dumps(redacted)
+    return None
+
+def redact_string_details(details: str) -> str:
+    """
+    Redacta información sensible en un string de details.
     """
     import re
     # Patrones a redactar
@@ -64,6 +94,7 @@ def redact_sensitive_details(details: str) -> str:
         (r'request_id=\d+', 'request_id=[REDACTED]'),
         (r'hash=[\w]+', 'hash=[PRESENT]'),
         (r'sig=[\w]+\.\.\.', 'sig=[PRESENT]'),
+        (r'case_number=[\w-]+', 'case_number=[REDACTED]'),  # Agregar case_number
     ]
     result = details
     for pattern, replacement in patterns:

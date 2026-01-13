@@ -93,7 +93,7 @@ async def upload_recording(
             action="SECURITY_RECORDING_UPLOADED",
             ip=request.client.host if request.client else None,
             success=True,
-            details=f"type={data.recording_type}, duration={data.duration_seconds}s, size={file_size} bytes"
+            details={"type": data.recording_type, "duration_seconds": data.duration_seconds, "size_bytes": file_size}
         )
         
         return {
@@ -109,7 +109,7 @@ async def upload_recording(
             action="SECURITY_RECORDING_UPLOAD_FAILED",
             ip=request.client.host if request.client else None,
             success=False,
-            details=str(e)
+            details={"error": str(e)}
         )
         raise HTTPException(status_code=500, detail=f"Error al guardar grabación: {str(e)}")
     finally:
@@ -201,7 +201,7 @@ async def get_recording(
             target=f"recording_{recording_id}",
             ip=request.client.host if request.client else None,
             success=True,
-            details=f"Viewed recording of user {recording.username}"
+            details={"viewed_user": recording.username}
         )
         
         return {
@@ -257,7 +257,7 @@ async def delete_recording(
             target=f"recording_{recording_id}",
             ip=request.client.host if request.client else None,
             success=True,
-            details=f"Deleted recording of user {username}"
+            details={"deleted_user": username}
         )
         
         return {"success": True, "message": "Grabación eliminada"}

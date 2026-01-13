@@ -42,7 +42,7 @@ def create_case(payload: CaseCreate, request: Request, ctx=Depends(require_roles
         db_secretaria.refresh(c)
 
         log_event(actor=u.username, role=u.role, action="CASE_CREATE", target=f"case:{c.id}", ip=request.client.host if request.client else None,
-                  success=True, details=f"case_number={payload.case_number}")
+                  success=True, details={"case_number": payload.case_number})
         return {"case_id": c.id, "case_number": c.case_number, "status": c.status, "assigned_judge": payload.assign_to_judge_username}
     finally:
         db_identidad.close()
