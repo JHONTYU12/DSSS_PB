@@ -1,7 +1,7 @@
 # LexSecure SFAS — Sistema Judicial Seguro
 
 <!-- Badges: se mantienen en una sola línea para mejor render -->
-[![Sistema](https://img.shields.io/badge/LexSecure%20SFAS-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JHONTYU12/DSSS_PB) [![Estado](https://img.shields.io/badge/Estado-Completo-success?style=for-the-badge&logo=check-circle&logoColor=white)]() [![Versión](https://img.shields.io/badge/Versión-2.0-blue?style=for-the-badge&logo=semver&logoColor=white)]() [![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=for-the-badge&logo=open-source-initiative&logoColor=white)]()
+[![Sistema](https://img.shields.io/badge/LexSecure%20SFAS-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JHONTYU12/DSSS_PB) [![Estado](https://img.shields.io/badge/Estado-Completo-success?style=for-the-badge&logo=check-circle&logoColor=white)]() [![Versión](https://img.shields.io/badge/Versión-1.2-blue?style=for-the-badge&logo=semver&logoColor=white)]()
 
 ## Demo en Video
 
@@ -27,7 +27,7 @@
 
 **LexSecure SFAS** es un sistema judicial moderno y seguro diseñado para gestionar casos legales con el más alto nivel de confidencialidad y auditabilidad. Combina tecnología de vanguardia con principios de seguridad avanzados para garantizar que cada acción sea rastreable mientras protege la privacidad de todos los involucrados.
 
-### ✨ Características Principales
+### Características Principales
 
 **Autenticación de Doble Factor (2FA)**  
 Acceso seguro con contraseña + código TOTP generado por aplicaciones como Google Authenticator.
@@ -90,11 +90,25 @@ Para probar todas las funcionalidades, usa estas credenciales:
 | `audit1` | `Audit!2026_SFAS` | Auditor | Consultar logs |
 
 ### 🔑Configuración 2FA
-Al iniciar sesión por primera vez, se generará un código QR. Escanéalo con:
-- Google Authenticator
-- Microsoft Authenticator
-- Authy
-- Cualquier app TOTP compatible
+
+**Secrets TOTP de los usuarios demo:**
+
+| Usuario | Contraseña | Rol | Secret TOTP (Google Authenticator) |
+|---------|------------|-----|-------------------------------------|
+| `admin` | `Admin!2026_SFAS` | Administrador | `IMPZMWM2LZRT7634WHP3II3NTYCKYQAA` |
+| `juez1` | `Juez!2026_SFAS` | Juez | `4UW6B7UPSVOUR33QQKSXOGWKOPW4JPF6` |
+| `secret1` | `Secret!2026_SFAS` | Secretario | `RTBNNG2ILXO3NCSRXV45JMKE6QQTNGB7` |
+| `cust1` | `Cust!2026_SFAS` | Custodio | `LWFOGZABWSW4LE4G3Y7SME4S7TYSFZGP` |
+| `cust2` | `Cust!2026_SFAS` | Custodio | `AJ5SW5OEILNTKAD4GIG533ZGF4B7JMAZ` |
+| `audit1` | `Audit!2026_SFAS` | Auditor | `DAA35TWEE347OE4XIRF2ECZZDMINJ627` |
+
+**Pasos para configurar Google Authenticator:**
+1. Abre la app en tu teléfono
+2. Toca **+** → **Introducir clave de configuración**
+3. **Nombre**: `SFAS-admin` (o el usuario que uses)
+4. **Clave**: Copia el Secret TOTP de la tabla
+5. **Tipo**: Basado en tiempo
+6. Guarda y usa el código de 6 dígitos generado
 
 ---
 
@@ -134,25 +148,39 @@ Al iniciar sesión por primera vez, se generará un código QR. Escanéalo con:
 
 ## Seguridad Implementada
 
-### Autenticación
-- ✅ Contraseñas hasheadas con bcrypt
-- ✅ Códigos TOTP de 6 dígitos (30 segundos)
-- ✅ Sesiones HttpOnly con expiración automática
+### 🔐 Autenticación - JWT en Cookie HttpOnly
+- ✅ **JWT firmado con HS256** (HMAC-SHA256) usando clave secreta de 32+ caracteres
+- ✅ **Cookie HttpOnly `sfas_jwt`**: JavaScript NO puede leer el token (**inmune a XSS**)
+- ✅ **Cookie `sfas_csrf`**: Token CSRF vinculado al JWT para validación
+- ✅ **2FA obligatorio**: PyOTP con TOTP de 6 dígitos (30 segundos)
+- ✅ **Contraseñas**: Hasheadas con bcrypt (factor 12)
+- ✅ **Expiración**: 8 horas, renovable con refresh
+- ✅ **Revocación**: Blacklist de tokens en logout
 
-### Autorización
-- ✅ Control de acceso basado en roles
-- ✅ Protección CSRF con tokens únicos
-- ✅ Validación de permisos por endpoint
+### 🛡️ Protección CSRF - Double-Submit Cookie Pattern
+- ✅ Token CSRF único por sesión (campo `csrf` en payload del JWT)
+- ✅ Cliente lee cookie `sfas_csrf` y lo envía en header `X-CSRF-Token`
+- ✅ Backend valida: `jwt.payload.csrf == header[X-CSRF-Token]`
+- ✅ Comparación con `secrets.compare_digest()` (protección timing-attack)
+- ✅ Protección contra CSRF: Atacante en otro sitio no puede leer cookies del navegador
 
-### Privacidad
-- ✅ API pública sin exposición de datos sensibles
-- ✅ Pseudónimos HMAC en logs de auditoría
-- ✅ Redacción automática de información confidencial
+### 🎯 Autorización - RBAC (Control de Acceso Basado en Roles)
+- ✅ Validación de roles en cada endpoint: `require_roles("admin", "juez")`
+- ✅ JWT payload incluye: `user_id`, `username`, `role`, `csrf`, `exp`, `iat`, `jti`, `iss`, `aud`
+- ✅ Administrador tiene acceso universal
+- ✅ Endpoints públicos sin autenticación (búsqueda de casos)
 
-### Infraestructura
-- ✅ Rate limiting (10 req/s público, 5 req/min auth)
-- ✅ Security headers (CSP, XSS, Clickjacking)
-- ✅ Sanitización de todas las entradas/salidas
+### 🔒 Privacidad y Datos
+- ✅ API pública: SOLO datos autorizados (sin nombres de jueces, solo pseudónimos)
+- ✅ Auditoría con pseudónimos HMAC-SHA256
+- ✅ Redacción automática de información confidencial en logs
+- ✅ localStorage: **NO se usa para tokens** (eliminada vulnerabilidad XSS)
+
+### 🏗️ Infraestructura
+- ✅ Rate limiting: 10 req/s público, 5 req/min autenticación
+- ✅ Security headers: CSP, X-Frame-Options, X-Content-Type-Options, HSTS
+- ✅ Sanitización HTML en todas las entradas/salidas
+- ✅ CORS configurado: `credentials: "include"` para cookies
 
 ---
 

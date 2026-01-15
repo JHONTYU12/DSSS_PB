@@ -1,26 +1,26 @@
 /**
  * API Client - JWT en Cookie HttpOnly + CSRF Protection
  * ======================================================
- * 
+ *
  * ARQUITECTURA DE SEGURIDAD:
- * 
+ *
  * 1. Cookie sfas_jwt (HttpOnly=True):
  *    - Contiene el JWT firmado con la información del usuario
  *    - JavaScript NO puede leerla (document.cookie no la muestra)
  *    - Se envía automáticamente con credentials: "include"
  *    - PROTECCIÓN XSS: Incluso si hay XSS, no pueden robar el JWT
- * 
+ *
  * 2. Cookie sfas_csrf (HttpOnly=False):
  *    - Contiene el token CSRF vinculado al JWT
  *    - JavaScript SÍ puede leerla (necesario para enviarlo en header)
  *    - Frontend lee esta cookie y la envía en header X-CSRF-Token
  *    - PROTECCIÓN CSRF: Atacante en otro sitio no puede leer nuestras cookies
- * 
+ *
  * FLUJO:
  * 1. Login + OTP → Backend setea cookies (sfas_jwt + sfas_csrf)
  * 2. Requests → Cookie automática + Header X-CSRF-Token
  * 3. Logout → Backend revoca JWT + borra cookies
- * 
+ *
  * ¿Por qué NO usamos localStorage?
  * - localStorage es accesible por JavaScript
  * - Si hay vulnerabilidad XSS, el atacante roba el token
@@ -84,10 +84,10 @@ export function clearUser() {
 
 /**
  * Función principal para hacer requests a la API.
- * 
+ *
  * - Cookies se envían automáticamente (credentials: "include")
  * - CSRF token se lee de cookie y se envía en header
- * 
+ *
  * @param {string} path - Ruta de la API (ej: "/auth/login")
  * @param {object} options - Opciones del request
  * @param {string} options.method - HTTP method (GET, POST, PUT, DELETE)
@@ -134,7 +134,7 @@ export async function apiFetch(
         : `HTTP ${res.status}`;
     throw new Error(msg);
   }
-  
+
   return data;
 }
 
@@ -180,9 +180,9 @@ export async function verifyOtp(login_token, otp) {
  */
 export async function checkSession() {
   try {
-    const data = await apiFetch("/auth/session", { 
+    const data = await apiFetch("/auth/session", {
       method: "GET",
-      csrf: false  // GET /session no requiere CSRF
+      csrf: false, // GET /session no requiere CSRF
     });
     if (data.authenticated && data.user) {
       setUser(data.user);
@@ -312,7 +312,7 @@ export async function fetchAuditLogs(filters = {}) {
   if (filters.to_date) params.set("to_date", filters.to_date);
   if (filters.page) params.set("page", filters.page);
   if (filters.page_size) params.set("page_size", filters.page_size);
-  
+
   const query = params.toString();
   return apiFetch(`/auditoria/logs${query ? "?" + query : ""}`, {
     method: "GET",
@@ -324,13 +324,18 @@ export async function fetchAuditLogs(filters = {}) {
 // Public Endpoints (Sin autenticación)
 // ============================================================================
 
-export async function searchPublicCases(q = "", status = "", page = 1, pageSize = 10) {
+export async function searchPublicCases(
+  q = "",
+  status = "",
+  page = 1,
+  pageSize = 10
+) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
   params.set("page", page);
   params.set("page_size", pageSize);
-  
+
   return apiFetch(`/public/cases?${params.toString()}`, {
     method: "GET",
     csrf: false, // Endpoint público
@@ -345,8 +350,13 @@ export async function getPublicCase(caseNumber) {
 }
 
 export async function verifyResolution(caseNumber, documentHash) {
-  return apiFetch(`/public/verify/${caseNumber}?document_hash=${encodeURIComponent(documentHash)}`, {
-    method: "GET",
-    csrf: false,
-  });
+  return apiFetch(
+    `/public/verify/${caseNumber}?document_hash=${encodeURIComponent(
+      documentHash
+    )}`,
+    {
+      method: "GET",
+      csrf: false,
+    }
+  );
 }

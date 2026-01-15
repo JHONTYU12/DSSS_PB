@@ -1,153 +1,201 @@
 # LexSecure SFAS - Sistema de Firmas y Aperturas Seguras
-## Documentación Técnica Completa
+## Documentación Técnica Completa v2.0
+
+**Última actualización**: Enero 2026  
+**Arquitectura de Seguridad**: JWT en Cookie HttpOnly + CSRF Double-Submit Pattern
 
 ---
 
 ## Tabla de Contenidos
 
 1. [Visión General del Sistema](#visión-general-del-sistema)
-2. [Arquitectura del Sistema](#arquitectura-del-sistema)
+2. [Arquitectura de Seguridad](#arquitectura-de-seguridad)
 3. [Estructura de Directorios](#estructura-de-directorios)
-4. [Flujo de Datos](#flujo-de-datos)
-5. [Guía de Lectura del Código](#guía-de-lectura-del-código)
-6. [Componentes Backend](#componentes-backend)
-7. [Componentes Frontend](#componentes-frontend)
-8. [Seguridad](#seguridad)
-9. [Base de Datos](#base-de-datos)
-10. [Docker y Despliegue](#docker-y-despliegue)
-11. [Instalación y Uso](#instalación-y-uso)
+4. [Flujo de Autenticación](#flujo-de-autenticación)
+5. [Componentes Backend](#componentes-backend)
+6. [Componentes Frontend](#componentes-frontend)
+7. [Base de Datos](#base-de-datos)
+8. [Configuración de Seguridad](#configuración-de-seguridad)
+9. [Docker y Despliegue](#docker-y-despliegue)
+10. [Testing y Verificación](#testing-y-verificación)
 
 ---
 
 ## Visión General del Sistema
 
-**LexSecure SFAS** es un sistema judicial seguro con las siguientes características:
+**LexSecure SFAS v2.0** es un sistema judicial seguro con arquitectura de seguridad de grado empresarial.
 
 ### **Funcionalidades Principales:**
+
 1. **Consulta Pública de Casos** (sin autenticación)
    - Búsqueda de casos judiciales
    - Visualización de resoluciones firmadas
-   - Verificación de autenticidad mediante hash
+   - Verificación de autenticidad mediante hash SHA256
    - **NO expone información sensible de funcionarios**
 
-2. **Sistema de Gestión Interna** (con autenticación 2FA)
-   - Secretarios: Crear casos, asignar a jueces
-   - Jueces: Crear y firmar resoluciones
-   - Custodios: Aprobar aperturas (esquema M-de-N)
-   - Auditores: Visualización con pseudónimos
-   - Administradores: Gestión de aperturas
+2. **Sistema de Gestión Interna** (con autenticación 2FA + JWT)
+   - **Secretarios**: Crear casos, asignar a jueces
+   - **Jueces**: Crear y firmar resoluciones con hash SHA256
+   - **Custodios**: Aprobar aperturas (esquema M-de-N)
+   - **Auditores**: Visualización con pseudónimos HMAC
+   - **Administradores**: Gestión de aperturas y usuarios
 
-### **Principios de Seguridad:**
-- **Defense in Depth**: Múltiples capas de seguridad
-- **Least Privilege**: Cada rol solo accede a lo necesario
-- **Privacy by Design**: Datos sensibles nunca salen sin autorización
-- **Auditabilidad**: Todos los eventos se registran
+### **Principios de Seguridad Implementados:**
 
----
-
-## Arquitectura del Sistema
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                      USUARIO                             │
-└────────────────┬────────────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────────────┐
-│                   NGINX (Reverse Proxy)                  │
-│  - Rate Limiting (10 req/s público, 5 req/m auth)       │
-│  - Security Headers (CSP, XSS Protection, etc.)          │
-│  - Enrutamiento /api/* → Backend, /* → Frontend          │
-└────────────┬────────────────────────────┬────────────────┘
-             │                            │
-             ▼                            ▼
-┌────────────────────────┐    ┌─────────────────────────┐
-│   FRONTEND (Vite/React) │    │  BACKEND (FastAPI)     │
-│   - Componentes UI      │    │  - API REST            │
-│   - Vista Pública       │    │  - Lógica de Negocio   │
-│   - Dashboards por Rol  │    │  - RBAC + CSRF         │
-│   - Validación Cliente  │    │  - Auditoría           │
-└────────────────────────┘    └──────────┬──────────────┘
-                                         │
-                                         ▼
-                              ┌──────────────────────┐
-                              │  PostgreSQL Database │
-                              │  - Usuarios/Sesiones │
-                              │  - Casos/Resoluciones│
-                              │  - Aperturas/Eventos │
-                              └──────────────────────┘
-```
-
-### **Capas del Sistema:**
-
-1. **Capa de Presentación (Frontend)**
-   - React 18 + Vite
-   - Diseño: Liquid Glass (Negro + Amarillo)
-   - Gestión de estado: React Hooks
-
-2. **Capa de Reverse Proxy (Nginx)**
-   - Terminación SSL (producción)
-   - Rate limiting
-   - Security headers
-   - Enrutamiento
-
-3. **Capa de Aplicación (Backend)**
-   - FastAPI (Python 3.12)
-   - Autenticación: Password + TOTP (2FA)
-   - Autorización: RBAC con CSRF
-   - ORM: SQLAlchemy 2.0
-
-4. **Capa de Datos (PostgreSQL)**
-   - Base de datos relacional
-   - Transacciones ACID
-   - Índices para performance
+- ✅ **Defense in Depth**: Múltiples capas de seguridad
+- ✅ **Least Privilege**: Cada rol solo accede a lo necesario
+- ✅ **Privacy by Design**: Datos sensibles protegidos
+- ✅ **Secure by Default**: Configuración segura desde el inicio
+- ✅ **Zero Trust**: Validación en cada petición
+- ✅ **Auditabilidad Total**: Todos los eventos registrados
 
 ---
 
-## Estructura de Directorios
+## Arquitectura de Seguridad
+
+### 🔐 JWT en Cookie HttpOnly + CSRF Protection
+
+**¿Por qué NO usamos localStorage?**
+- localStorage es accesible por JavaScript
+- Si hay vulnerabilidad XSS, el atacante puede robar el token
+- **Solución**: Cookie HttpOnly es INMUNE a XSS
+
+#### Arquitectura Implementada:
 
 ```
-final/
-├── docker-compose.yml          # Orquestación de contenedores
-├── README.md                   # Este archivo
-│
-├── nginx/
-│   └── default.conf           # Configuración nginx + rate limiting
-│
-├── backend/
-│   ├── Dockerfile             # Imagen Python + FastAPI
-│   ├── requirements.txt       # Dependencias Python
-│   └── app/
-│       ├── __init__.py
-│       ├── main.py            # Punto de entrada FastAPI
-│       ├── core/
-│       │   ├── __init__.py
-│       │   └── settings.py    # Configuración global (cookies, secrets)
-│       ├── db/
-│       │   ├── __init__.py
-│       │   ├── base.py        # Declarative Base SQLAlchemy
-│       │   ├── session.py     # Motor de BD y SessionLocal
-│       │   ├── models.py      # Modelos ORM (User, Case, Resolution, etc.)
-│       │   └── init.py        # Seed de usuarios demo
-│       ├── auth/
-│       │   ├── __init__.py
-│       │   └── router.py      # Login, OTP, logout
-│       ├── rbac/
-│       │   ├── __init__.py
-│       │   └── deps.py        # Dependency injection para RBAC+CSRF
-│       ├── cases/
-│       │   ├── __init__.py
-│       │   └── router.py      # CRUD de casos (secretarios)
-│       ├── judge/
-│       │   ├── __init__.py
-│       │   └── router.py      # Crear/firmar resoluciones
-│       ├── opening/
-│       │   ├── __init__.py
-│       │   └── router.py      # Sistema M-de-N para aperturas
-│       ├── audit/
-│       │   ├── __init__.py
-│       │   ├── logger.py      # Logger de eventos con pseudónimos y redacción
-│       │   └── router.py      # Consulta de logs (auditor)
+┌─────────────────────────────────────────────────────────────┐
+│                    CLIENTE (Navegador)                       │
+│                                                               │
+│  1. POST /auth/login                                         │
+│     → {username, password}                                   │
+│                                                               │
+│  2. POST /auth/verify-otp                                    │
+│     → {login_token, totp_code}                               │
+│                                                               │
+│  3. Backend responde con Set-Cookie:                         │
+│     • sfas_jwt=<JWT>; HttpOnly; Secure; SameSite=Lax        │
+│     • sfas_csrf=<CSRF>; Secure; SameSite=Lax                │
+│                                                               │
+│  4. Requests autenticados:                                   │
+│     • Cookie: sfas_jwt=<JWT>  (automático)                  │
+│     • X-CSRF-Token: <CSRF>    (leído de cookie sfas_csrf)   │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    BACKEND (FastAPI)                         │
+│                                                               │
+│  get_current_user():                                         │
+│  1. Lee JWT de Cookie sfas_jwt                              │
+│  2. Valida firma JWT con jwt_secret_key (HS256)             │
+│  3. Verifica exp (expiración 8 horas)                       │
+│  4. Verifica que no esté en blacklist                       │
+│  5. Lee header X-CSRF-Token                                 │
+│  6. Valida: jwt.payload.csrf == header[X-CSRF-Token]        │
+│  7. Valida rol del usuario                                  │
+│  8. Retorna payload: {user_id, username, role}              │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🔑 Estructura del JWT
+
+**Archivo**: `backend/app/core/jwt_handler.py`
+
+```python
+# Payload del JWT
+{
+    "user_id": 1,
+    "username": "admin",
+    "role": "admin",
+    "csrf": "abc123...",      # Token CSRF vinculado
+    "exp": 1736890000,        # Expiración (8 horas)
+    "iat": 1736861200,        # Issued At
+    "jti": "uuid-unico",      # JWT ID (para revocación)
+    "iss": "SFAS-LexSecure",  # Issuer
+    "aud": "SFAS-Users"       # Audience
+}
+```
+
+**Configuración**: `backend/app/core/settings.py`
+
+```python
+class Settings(BaseSettings):
+    # JWT Configuration
+    jwt_secret_key: str = "tu-clave-secreta-muy-larga-minimo-32-caracteres"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_hours: int = 8
+    
+    # Cookie Configuration
+    jwt_cookie_name: str = "sfas_jwt"
+    jwt_cookie_httponly: bool = True
+    jwt_cookie_secure: bool = True  # HTTPS en producción
+    jwt_cookie_samesite: str = "lax"
+    
+    csrf_cookie_name: str = "sfas_csrf"
+```
+
+### 🛡️ CSRF Protection - Double-Submit Cookie Pattern
+
+**Archivo**: `backend/app/rbac/deps.py`
+
+```python
+def get_current_user(
+    sfas_jwt: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")
+) -> dict:
+    # 1. Validar JWT
+    if not sfas_jwt:
+        raise HTTPException(401, "No autenticado")
+    
+    payload = decode_jwt_token(sfas_jwt)
+    
+    # 2. Validar CSRF
+    if not x_csrf_token:
+        raise HTTPException(403, "Token CSRF requerido")
+    
+    if not validate_csrf(payload, x_csrf_token):
+        raise HTTPException(403, "Token CSRF inválido")
+    
+    # 3. Validar que no esté revocado
+    if is_token_revoked(sfas_jwt):
+        raise HTTPException(401, "Token revocado")
+    
+    return payload
+```
+
+**Frontend**: `frontend/src/ui/api.js`
+
+```javascript
+// Leer CSRF de cookie (NO HttpOnly)
+function getCsrfToken() {
+  return getCookie("sfas_csrf");
+}
+
+// Enviar en todas las requests autenticadas
+async function apiFetch(url, options = {}, csrf = true) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...options.headers
+  };
+  
+  if (csrf) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+  }
+  
+  const response = await fetch(`${API_BASE}${url}`, {
+    ...options,
+    headers,
+    credentials: "include"  // Envía cookies automáticamente
+  });
+  
+  return response;
+}
+```
 │       └── public/            # API pública sin autenticación
 │           ├── __init__.py
 │           └── router.py      # Búsqueda pública de casos (sanitizada)
