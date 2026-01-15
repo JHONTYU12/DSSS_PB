@@ -155,6 +155,17 @@ export async function login(username, password) {
 }
 
 /**
+ * SOLO DEMO: Obtener código OTP actual para el usuario.
+ * En producción esto NO debería existir.
+ */
+export async function getDemoOtp(loginToken) {
+  return apiFetch(`/auth/demo-otp/${loginToken}`, {
+    method: "GET",
+    csrf: false,
+  });
+}
+
+/**
  * Paso 2: Verificar código OTP.
  * Si es exitoso, el backend setea las cookies HttpOnly automáticamente.
  * NO retorna tokens - los tokens están seguros en cookies.

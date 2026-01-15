@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import "./styles.css";
-import { login, verifyOtp, checkSession, logout, getUser } from "./api.js";
+import { login, verifyOtp, checkSession, logout, getUser, getDemoOtp } from "./api.js";
 
 // Components
 import { ToastProvider, useToast } from "./components/common";
@@ -22,6 +22,8 @@ function AppContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loginToken, setLoginToken] = useState("");
+  const [demoOtp, setDemoOtp] = useState("");
+  const [demoSeconds, setDemoSeconds] = useState(30);
 
   // Verificar sesión al cargar (usa cookie HttpOnly automáticamente)
   async function checkExistingSession() {
@@ -55,6 +57,17 @@ function AppContent() {
     setError("");
   };
 
+  // Función para obtener OTP demo
+  const fetchDemoOtp = async (token) => {
+    try {
+      const r = await getDemoOtp(token);
+      setDemoOtp(r.current_otp);
+      setDemoSeconds(r.valid_for_seconds);
+    } catch (e) {
+      console.log("Demo OTP no disponible:", e.message);
+    }
+  };
+
   const handleLogin = async (username, password) => {
     setError("");
     setLoading(true);
@@ -62,6 +75,8 @@ function AppContent() {
       const r = await login(username, password);
       setLoginToken(r.login_token);
       setStage("otp");
+      // Obtener código OTP demo automáticamente
+      fetchDemoOtp(r.login_token);
       toast.success("Credenciales válidas. Ingresa tu código OTP.");
     } catch (e) {
       setError(e.message);
@@ -101,7 +116,14 @@ function AppContent() {
   const handleBackToLogin = () => {
     setStage("login");
     setLoginToken("");
+    setDemoOtp("");
     setError("");
+  };
+
+  const handleRefreshOtp = () => {
+    if (loginToken) {
+      fetchDemoOtp(loginToken);
+    }
   };
 
   // Loading state
@@ -132,6 +154,9 @@ function AppContent() {
         error={error}
         onBack={handleBackToLogin}
         loginToken={loginToken}
+        demoOtp={demoOtp}
+        demoSeconds={demoSeconds}
+        onRefreshOtp={handleRefreshOtp}
       />
     );
   }

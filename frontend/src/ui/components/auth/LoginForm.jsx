@@ -100,13 +100,21 @@ export function LoginForm({ onLogin, loading, error, onGoToPublic }) {
   );
 }
 
-export function OtpForm({ onVerify, loading, error, onBack, loginToken }) {
+export function OtpForm({ onVerify, loading, error, onBack, loginToken, demoOtp, demoSeconds, onRefreshOtp }) {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
 
   useEffect(() => {
     inputRefs.current[0]?.focus();
   }, []);
+
+  // Auto-fill cuando hay demoOtp disponible
+  useEffect(() => {
+    if (demoOtp && demoOtp.length === 6) {
+      const newOtp = demoOtp.split("");
+      setOtp(newOtp);
+    }
+  }, [demoOtp]);
 
   const handleChange = (index, value) => {
     if (!/^\d*$/.test(value)) return;
@@ -156,6 +164,49 @@ export function OtpForm({ onVerify, loading, error, onBack, loginToken }) {
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
+          {/* Demo OTP Display */}
+          {demoOtp && (
+            <div style={{ 
+              padding: "16px", 
+              background: "linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.1))", 
+              borderRadius: "var(--radius-md)", 
+              border: "1px solid rgba(34, 197, 94, 0.3)",
+              marginBottom: "16px",
+              textAlign: "center"
+            }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                🔐 Código Demo (Auto-llenado)
+              </div>
+              <div style={{ 
+                fontSize: "2rem", 
+                fontWeight: "700", 
+                fontFamily: "monospace", 
+                letterSpacing: "0.5rem",
+                color: "var(--success)"
+              }}>
+                {demoOtp}
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                Válido por {demoSeconds}s
+                <button
+                  type="button"
+                  onClick={onRefreshOtp}
+                  style={{
+                    marginLeft: "8px",
+                    background: "none",
+                    border: "none",
+                    color: "var(--primary)",
+                    cursor: "pointer",
+                    fontSize: "0.7rem",
+                    textDecoration: "underline"
+                  }}
+                >
+                  Refrescar
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="otp-container" onPaste={handlePaste}>
             {otp.map((digit, index) => (
               <input
