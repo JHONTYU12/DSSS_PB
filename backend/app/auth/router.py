@@ -307,6 +307,42 @@ def logout(
     return {"success": True, "message": "Sesión cerrada"}
 
 
+@router.get("/demo-otp/{login_token}")
+def get_demo_otp(login_token: str):
+    """
+    SOLO PARA DEMO: Obtener el código OTP actual del usuario.
+    
+    En producción, esto NO debería existir. El usuario debe usar
+    su aplicación de autenticación (Google Authenticator, etc.)
+    
+    Este endpoint facilita las pruebas y demostraciones.
+    """
+    entry = LOGIN_TOKENS.get(login_token)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Token no encontrado")
+    
+    if entry["expires_at"] < datetime.now(timezone.utc):
+        LOGIN_TOKENS.pop(login_token, None)
+        raise HTTPException(status_code=401, detail="Token expirado")
+    
+    db = SessionIdentidad()
+    try:
+        u = db.query(models.User).filter(models.User.id == entry["user_id"]).first()
+        if not u:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        totp = pyotp.TOTP(u.totp_secret)
+        current_otp = totp.now()
+        
+        return {
+            "username": u.username,
+            "current_otp": current_otp,
+            "valid_for_seconds": 30 - (datetime.now().second % 30)
+        }
+    finally:
+        db.close()
+
+
 @router.get("/whoami")
 def whoami(
     request: Request,

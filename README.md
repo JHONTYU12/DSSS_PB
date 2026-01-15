@@ -93,6 +93,11 @@ Para probar todas las funcionalidades, usa estas credenciales:
 
 **Secrets TOTP de los usuarios demo:**
 
+ejecutar
+
+docker compose exec -T postgres_identidad psql -U sfas -d sfas_identidad -c "SELECT username, role, totp_secret FROM users;"
+
+
 | Usuario | Contraseña | Rol | Secret TOTP (Google Authenticator) |
 |---------|------------|-----|-------------------------------------|
 | `admin` | `Admin!2026_SFAS` | Administrador | `IMPZMWM2LZRT7634WHP3II3NTYCKYQAA` |
