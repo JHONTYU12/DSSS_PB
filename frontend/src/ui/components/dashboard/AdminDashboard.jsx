@@ -448,15 +448,6 @@ export function AdminDashboard() {
               <div><strong>Duración:</strong> {Math.floor(selectedRecording.duration_seconds / 60)}:{(selectedRecording.duration_seconds % 60).toString().padStart(2, '0')}</div>
               <div><strong>Tamaño:</strong> {(selectedRecording.file_size / 1024).toFixed(1)} KB</div>
               <div><strong>Fecha:</strong> {new Date(selectedRecording.uploaded_at).toLocaleString()}</div>
-              <div style={{ gridColumn: "1/-1" }}>
-                <strong>SHA256:</strong> <code style={{ fontSize: "0.7rem", wordBreak: "break-all" }}>{selectedRecording.sha256_hash}</code>
-              </div>
-              <div style={{ gridColumn: "1/-1" }}>
-                <strong>MIME Type:</strong> {selectedRecording.mime_type}
-              </div>
-              <div style={{ gridColumn: "1/-1" }}>
-                <strong>Datos Base64:</strong> {selectedRecording.recording_data ? `${selectedRecording.recording_data.length} caracteres` : 'Sin datos'}
-              </div>
             </div>
           </div>
         )}

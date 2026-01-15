@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import "./styles.css";
-import { login, verifyOtp, whoami, logout } from "./api.js";
+import { login, verifyOtp, checkSession, logout, getUser } from "./api.js";
 
 // Components
 import { ToastProvider, useToast } from "./components/common";
@@ -23,21 +23,26 @@ function AppContent() {
   const [loading, setLoading] = useState(false);
   const [loginToken, setLoginToken] = useState("");
 
-  async function refreshWhoami() {
+  // Verificar sesión al cargar (usa cookie HttpOnly automáticamente)
+  async function checkExistingSession() {
     try {
-      const me = await whoami();
-      setUser(me);
-      setStage("app");
-      setError("");
+      const data = await checkSession();
+      if (data.authenticated && data.user) {
+        setUser(data.user);
+        setStage("app");
+        setError("");
+      } else {
+        setUser(null);
+        setStage("public");
+      }
     } catch {
       setUser(null);
-      // Por defecto mostrar vista pública en lugar de login
       setStage("public");
     }
   }
 
   useEffect(() => {
-    refreshWhoami();
+    checkExistingSession();
   }, []);
 
   const handleGoToLogin = () => {
@@ -70,8 +75,9 @@ function AppContent() {
     setLoading(true);
     try {
       const r = await verifyOtp(loginToken, otp);
-      // El backend retorna {access_token, refresh_token, user: {username, role, user_id}}
-      const userData = r.user || r;
+      // El backend setea cookies HttpOnly automáticamente
+      // Solo recibimos info del usuario, NO tokens
+      const userData = r.user;
       setUser(userData);
       setStage("app");
       toast.success(`Bienvenido, ${userData.username}`);

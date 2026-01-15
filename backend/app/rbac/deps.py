@@ -1,73 +1,108 @@
 """
-RBAC Dependencies con JWT Authentication.
-Sistema de seguridad para Software Seguro.
+RBAC Dependencies - JWT en Cookie HttpOnly + CSRF Protection
+=============================================================
 
-Características:
-- JWT Bearer Token Authentication
-- Role-Based Access Control (RBAC)
-- Esquema de seguridad OAuth2 para Swagger/OpenAPI
-- Sin CSRF necesario (JWT no es vulnerable a CSRF)
+ARQUITECTURA DE SEGURIDAD:
+
+1. JWT en Cookie HttpOnly (sfas_jwt):
+   - Se lee automáticamente de la cookie
+   - JavaScript NO puede acceder (protección XSS)
+   - Firmado con HS256 (HMAC-SHA256)
+
+2. CSRF Protection (Double-Submit Cookie):
+   - Token CSRF vinculado al JWT (campo 'csrf' en payload)
+   - Cliente envía token en header X-CSRF-Token
+   - Backend valida que coincidan
+   - Protege contra Cross-Site Request Forgery
+
+3. Role-Based Access Control (RBAC):
+   - require_roles("secretario", "juez") → solo esos roles
+   - require_auth() → cualquier usuario autenticado
+   - Admin tiene acceso universal
+
+FLUJO DE VALIDACIÓN:
+1. Extraer JWT de cookie sfas_jwt
+2. Validar firma del JWT (jwt_secret_key)
+3. Verificar que no esté expirado
+4. Verificar que no esté revocado (blacklist)
+5. Validar CSRF: header X-CSRF-Token == jwt.csrf
+6. Verificar rol del usuario
 """
 
-from fastapi import HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from ..core.jwt_handler import validate_access_token
+from fastapi import HTTPException, Request, Cookie, Header
+from ..core.jwt_handler import decode_jwt_token, validate_csrf
+from ..core.settings import settings
 from ..db.session import SessionIdentidad
 from ..db import models
 import jwt
 
-# Esquema de seguridad Bearer para Swagger UI
-# Esto hace que Swagger muestre el botón "Authorize" con Bearer token
-security_scheme = HTTPBearer(
-    scheme_name="JWT Bearer Token",
-    description="Ingresa tu JWT access_token obtenido de /auth/verify-otp",
-    auto_error=True
-)
-
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme)
+    request: Request,
+    sfas_jwt: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")
 ) -> dict:
     """
-    Extrae y valida el JWT desde el header Authorization.
+    Extrae y valida el usuario desde JWT en cookie + CSRF.
     
     Esta función:
-    1. Extrae el token del header Authorization: Bearer <token>
-    2. Valida la firma del token
+    1. Lee el JWT de la cookie HttpOnly (sfas_jwt)
+    2. Valida la firma del JWT
     3. Verifica que no esté expirado
-    4. Verifica que no esté en la blacklist (revocado)
-    5. Retorna el payload con user_id, username, role
+    4. Verifica que no esté revocado
+    5. Valida el token CSRF (X-CSRF-Token header == jwt.csrf)
+    6. Retorna el payload con user_id, username, role
+    
+    Args:
+        request: FastAPI Request object
+        sfas_jwt: JWT desde cookie HttpOnly (automático)
+        x_csrf_token: Token CSRF desde header (enviado por JS)
+    
+    Returns:
+        dict: Payload del JWT con user_id, username, role
     
     Raises:
-        HTTPException 401: Si el token es inválido, expirado o revocado
+        HTTPException 401: JWT no presente, expirado o inválido
+        HTTPException 403: CSRF token no coincide
     """
-    token = credentials.credentials
+    if not sfas_jwt:
+        raise HTTPException(
+            status_code=401,
+            detail="No autenticado - Cookie de sesión no encontrada"
+        )
     
     try:
-        payload = validate_access_token(token)
-        return payload
+        payload = decode_jwt_token(sfas_jwt)
     except jwt.ExpiredSignatureError:
         raise HTTPException(
-            status_code=401, 
-            detail="Token expirado. Usa /auth/refresh para obtener un nuevo token.",
-            headers={"WWW-Authenticate": "Bearer"}
+            status_code=401,
+            detail="Sesión expirada - Por favor inicia sesión nuevamente"
         )
     except jwt.InvalidTokenError as e:
         raise HTTPException(
-            status_code=401, 
-            detail=f"Token inválido: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"}
+            status_code=401,
+            detail=f"Token inválido: {str(e)}"
         )
+    
+    # Validar CSRF (Double-Submit Cookie Pattern)
+    if not validate_csrf(payload, x_csrf_token):
+        raise HTTPException(
+            status_code=403,
+            detail="CSRF token inválido o faltante"
+        )
+    
+    return payload
 
 
 def require_roles(*allowed_roles: str):
     """
-    Dependency Factory para proteger endpoints con JWT y validar roles.
+    Dependency Factory para proteger endpoints con JWT + CSRF + Roles.
     
     Implementa:
-    - Autenticación: Valida JWT Bearer token
-    - Autorización: Verifica que el rol del usuario esté en allowed_roles
-    - Admin tiene acceso universal a todos los endpoints
+    - Autenticación: Valida JWT en cookie HttpOnly
+    - CSRF Protection: Valida header X-CSRF-Token
+    - Autorización: Verifica rol del usuario
+    - Admin tiene acceso universal
     
     Args:
         *allowed_roles: Roles permitidos (secretario, juez, admin, custodio, auditor)
@@ -76,35 +111,46 @@ def require_roles(*allowed_roles: str):
         Función dependency que retorna el payload del JWT
     
     Raises:
-        HTTPException 401: Token inválido o expirado
-        HTTPException 403: Rol no autorizado
+        HTTPException 401: JWT inválido o expirado
+        HTTPException 403: CSRF inválido o rol no autorizado
     
-    Uso en routers:
+    Uso:
         @router.get("/casos")
         def mis_casos(user: dict = Depends(require_roles("juez"))):
             user_id = user["user_id"]
             username = user["username"]
             role = user["role"]
-            ...
     """
     def _dependency(
-        credentials: HTTPAuthorizationCredentials = Depends(security_scheme)
+        request: Request,
+        sfas_jwt: str | None = Cookie(default=None),
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")
     ) -> dict:
-        # Validar token
-        token = credentials.credentials
+        # Validar JWT + CSRF
+        if not sfas_jwt:
+            raise HTTPException(
+                status_code=401,
+                detail="No autenticado"
+            )
+        
         try:
-            payload = validate_access_token(token)
+            payload = decode_jwt_token(sfas_jwt)
         except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=401,
-                detail="Token expirado. Usa /auth/refresh para obtener un nuevo token.",
-                headers={"WWW-Authenticate": "Bearer"}
+                detail="Sesión expirada"
             )
         except jwt.InvalidTokenError as e:
             raise HTTPException(
                 status_code=401,
-                detail=f"Token inválido: {str(e)}",
-                headers={"WWW-Authenticate": "Bearer"}
+                detail=f"Token inválido: {str(e)}"
+            )
+        
+        # Validar CSRF
+        if not validate_csrf(payload, x_csrf_token):
+            raise HTTPException(
+                status_code=403,
+                detail="CSRF token inválido"
             )
         
         # Verificar rol (admin tiene acceso universal)
@@ -124,34 +170,53 @@ def require_auth():
     """
     Dependency para endpoints que solo requieren autenticación (cualquier rol).
     
+    Valida:
+    - JWT en cookie HttpOnly
+    - CSRF token en header
+    - Usuario activo
+    
     Uso:
         @router.get("/perfil")
         def mi_perfil(user: dict = Depends(require_auth())):
             return {"username": user["username"]}
     """
     def _dependency(
-        credentials: HTTPAuthorizationCredentials = Depends(security_scheme)
+        request: Request,
+        sfas_jwt: str | None = Cookie(default=None),
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")
     ) -> dict:
-        token = credentials.credentials
+        if not sfas_jwt:
+            raise HTTPException(
+                status_code=401,
+                detail="No autenticado"
+            )
+        
         try:
-            return validate_access_token(token)
+            payload = decode_jwt_token(sfas_jwt)
         except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=401,
-                detail="Token expirado",
-                headers={"WWW-Authenticate": "Bearer"}
+                detail="Sesión expirada"
             )
         except jwt.InvalidTokenError as e:
             raise HTTPException(
                 status_code=401,
-                detail=f"Token inválido: {str(e)}",
-                headers={"WWW-Authenticate": "Bearer"}
+                detail=f"Token inválido: {str(e)}"
             )
+        
+        # Validar CSRF
+        if not validate_csrf(payload, x_csrf_token):
+            raise HTTPException(
+                status_code=403,
+                detail="CSRF token inválido"
+            )
+        
+        return payload
     
     return _dependency
 
 
-def get_user_from_db(user_id: int):
+def get_user_from_db(user_id: str):
     """
     Obtiene el usuario completo desde la BD usando el user_id del JWT.
     Útil cuando necesitas datos que no están en el JWT (como totp_secret).
@@ -167,7 +232,3 @@ def get_user_from_db(user_id: int):
         return user
     finally:
         db.close()
-
-
-# Alias para compatibilidad con código existente
-require_roles_csrf = require_roles

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, Cookie, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
@@ -10,7 +10,7 @@ from .opening.router import router as opening_router
 from .audit.router import router as audit_router
 from .public.router import router as public_router
 from .recordings.router import router as recordings_router
-from .rbac.deps import get_current_user, security_scheme
+from .rbac.deps import require_auth
 
 app = FastAPI(
     title="LexSecure SFAS API", 
@@ -18,18 +18,26 @@ app = FastAPI(
     description="""
 ## Sistema de Firmas y Aperturas Seguras (SFAS)
 
-### Autenticación JWT
-1. `POST /auth/login` - Inicia sesión con usuario/contraseña
-2. `POST /auth/verify-otp` - Verifica OTP y recibe tokens JWT
-3. Usar `Authorization: Bearer <access_token>` en todas las peticiones
-4. `POST /auth/refresh` - Renueva tokens cuando expire el access_token
-5. `POST /auth/logout` - Revoca tokens
+### Autenticación: JWT en Cookie HttpOnly + CSRF
 
-### Seguridad
-- **Access Token**: Válido por 15 minutos
-- **Refresh Token**: Válido por 7 días
-- **2FA Obligatorio**: TOTP (Google Authenticator)
-- **RBAC**: Control de acceso basado en roles
+**Arquitectura de Seguridad:**
+- JWT firmado con HS256 almacenado en Cookie HttpOnly (protección XSS)
+- Token CSRF para protección contra CSRF attacks
+- 2FA obligatorio con TOTP (Google Authenticator)
+
+**Flujo de Autenticación:**
+1. `POST /auth/login` - Valida usuario/contraseña → retorna login_token
+2. `POST /auth/verify-otp` - Valida TOTP → setea cookies (sfas_jwt + sfas_csrf)
+3. Requests autenticados: Cookie automática + Header X-CSRF-Token
+4. `GET /auth/session` - Verifica sesión activa
+5. `POST /auth/logout` - Revoca JWT y borra cookies
+
+### Roles (RBAC)
+- **admin**: Gestión completa del sistema
+- **juez**: Crear y firmar resoluciones
+- **secretario**: Crear y gestionar casos
+- **custodio**: Aprobar aperturas M-de-N
+- **auditor**: Consultar logs de auditoría
 """
 )
 
@@ -51,8 +59,8 @@ def health():
     return {"status":"ok"}
 
 @app.get("/secure/whoami", tags=["secure"])
-def whoami(user: dict = Depends(get_current_user)):
-    """Obtiene información del usuario autenticado"""
+def whoami(user: dict = Depends(require_auth())):
+    """Obtiene información del usuario autenticado (requiere JWT + CSRF)"""
     return {"username": user["username"], "role": user["role"], "user_id": user["user_id"]}
 
 app.include_router(auth_router)
@@ -86,23 +94,27 @@ def custom_openapi():
         }
     ]
     
-    # Agregar esquema de seguridad JWT Bearer
+    # Agregar esquema de seguridad Cookie + CSRF
     schema["components"] = schema.get("components", {})
     schema["components"]["securitySchemes"] = {
-        "BearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "Ingresa tu access_token JWT obtenido de /auth/verify-otp"
+        "CookieAuth": {
+            "type": "apiKey",
+            "in": "cookie",
+            "name": "sfas_jwt",
+            "description": "JWT en cookie HttpOnly (se envía automáticamente)"
+        },
+        "CSRFToken": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "description": "Token CSRF (leer de cookie sfas_csrf)"
         }
     }
     # Aplicar seguridad global a todos los endpoints protegidos
-    # Esto hace que Swagger UI muestre el botón Authorize
     for path in schema.get("paths", {}).values():
         for operation in path.values():
             if isinstance(operation, dict) and "security" in operation:
-                # Reemplazar el nombre del esquema para que coincida
-                operation["security"] = [{"BearerAuth": []}]
+                operation["security"] = [{"CookieAuth": [], "CSRFToken": []}]
     app.openapi_schema = schema
     return app.openapi_schema
 
